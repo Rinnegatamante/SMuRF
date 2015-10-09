@@ -1,6 +1,6 @@
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
+#include <stdio.h>
 #include <malloc.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -9,19 +9,8 @@
 #include <arpa/inet.h>
 #include <3ds.h>
 #include <fcntl.h>
+#include "Network.h"
 u32* sockmem;
-
-// Structures definition
-typedef struct{
-	u32 magic;
-	u32 sock;
-	struct sockaddr_in addrTo;
-	bool serverSocket;
-} Socket;
-typedef struct{
-	u8* message;
-	u32 size;
-} Packet;
 
 bool isWifiOn(){
 	u32 wifiStatus;
@@ -69,7 +58,7 @@ Socket* createServerSocket(int port){
 		return NULL;
 	}
 
-	setSockNoBlock(my_socket->sock, 1);
+	fcntl(my_socket->sock, F_SETFL, O_NONBLOCK);
 
 	err = listen(my_socket->sock, 1);
 	if (err != 0) {
@@ -102,14 +91,14 @@ Packet* socketRecv(Socket* my_socket, u32 size){
 
 void socketSend(Socket* my_socket, char* text){
 	size_t size = strlen(text);
-	if (my_socket->serverSocket) return false;
-	if (!text) return false;
+	if (my_socket->serverSocket) return;
+	if (!text) return;
 	send(my_socket->sock, text, size, 0);
 }
 
 Socket* serverAccept(Socket* my_socket)
 {
-	if (!my_socket->serverSocket) return luaL_error(L, "accept allowed for server sockets only.");
+	if (!my_socket->serverSocket) return NULL;
 
 	struct sockaddr_in addrAccept;
 	socklen_t cbAddrAccept = sizeof(addrAccept);
