@@ -3,34 +3,42 @@
 #include <string.h>
 #include <malloc.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-
 #define u32 uint32_t
-#define MAX_BUFFER_SIZE 524288
 
-enum{
-	SMURF_GET_SONG_LIST = 0,
-	SMURF_GET_SONG,
-	SMURF_UPDATE_CACHE,
-};
-
+// Structures definition
 typedef struct{
 	u32 sock;
 	struct sockaddr_in addrTo;
 } Socket;
-
 typedef struct{
 	char name[256];
 	void* next;
 } songlist;
 
+// Constants and "pseudo"-constants definition
+#define MAX_BUFFER_SIZE 524288
+u32 BUFFER_SIZE;
+
+// Commands list
+enum{ 
+	SMURF_GET_SONG_LIST = 0,
+	SMURF_GET_SONG,
+	SMURF_UPDATE_CACHE,
+	SMURF_ABORT_CONNECTION,
+};
+
+// Globals definition
 FILE* currentSong = NULL;
 songlist* songList = NULL;
+uint8_t closing = 0;
 
+// getSongFilename: Retrieve filename for a selected song
 char* getSongFilename(songlist* list, int idx){
 	int i = 0;
 	songlist* song = list;
@@ -45,17 +53,54 @@ char* getSongFilename(songlist* list, int idx){
 	return song->name;
 }
 
+// populateDatabase: Full songlist with songs in a directory
+int populateDatabase(DIR* folder){
+	int idx = 0;
+	songlist* pointer = NULL;
+	for (;;){
+		struct dirent* curFile;
+		if ((curFile = readdir(folder)) != NULL) {
+			if (idx == 0){
+				songList = malloc(sizeof(songlist));
+				pointer = songList; 
+			}else{
+				pointer->next = malloc(sizeof(songlist));
+				pointer = pointer->next;
+			}
+			strcpy(pointer->name,curFile->d_name);
+		}else break;
+		idx++;
+	}
+	pointer->next = NULL;
+	return idx;
+}
+
+// parseSongs: Prepare a query with songs filenames
+char* parseSongs(songlist* list, int songs){
+	songlist* curFile = list;
+	char* query = malloc(128*songs);
+	int idx = 0;
+	while (idx < songs){
+		char filename[128];
+		strncpy(filename, curFile->name, 127);
+		if ((idx + 1) == songs) filename[127] = 0;
+		else filename[127] = ':';
+		strncpy(&query[idx*128], filename, 128); 
+		idx++;
+	}
+	return query;
+}
+
 int main(int argc,char** argv){
 
 	// Getting IP
 	char* host = (char*)(argv[1]);
 	
 	// Writing info on the screen
-	printf("-------------------------\n");
-	printf("SMuRF Command-Line Client\n");
-	printf("Server: ");
-	printf(host);
-	printf("\n-------------------------\n\n");
+	printf("+-------------------------+\n");
+	printf("|SMuRF Command-Line Client|\n");
+	printf("|    Version: 0.1 BETA    |");
+	printf("\n+-------------------------+\n\n");
 
 	// Creating client socket
 	Socket* my_socket = (Socket*) malloc(sizeof(Socket));
@@ -99,12 +144,39 @@ int main(int argc,char** argv){
 	while (1){
 		count = recv(my_socket->sock, &cmd, 10, 0);
 		if (count > 0){
+		
+			// Commands parser
 			if (strstr(cmd, "exec")){
 				cmd_id[0] = cmd[4];
 				cmd_id[1] = 0;
 				switch (atoi(cmd_id)){
-					case SMURF_GET_SONG_LIST: // TODO
+				
+					// Retrive songs list
+					case SMURF_GET_SONG_LIST:
+						printf("\nGET_SONG_LIST: Retrieving songs list...");
+						DIR* songsdir = opendir("./songs");
+						if (songsdir == NULL) printf("\nERROR: Cannot find songs directory!");
+						int totalSongs = populateDatabase(songsdir);
+						printf(" Done!");
+						int dim;
+						char* query;
+						if (totalSongs == 0){ 
+							query = malloc(2);
+							query[0] = ":";
+							query[1] = 0;
+							dim = 2;
+						}else{
+							char* query = parseSongs(songList, totalSongs);
+							dim = 128*totalSongs;
+						}
+						printf("\nGET_SONG_LIST: Sending songs list...");
+						send(my_socket->sock, query, dim, 0);
+						while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+						printf(" Done!");
+						free(query);
 						break;
+						
+					// Fetch selected song
 					case SMURF_GET_SONG:
 						printf("\nGET_SONG: Opening song to stream...");
 						if (currentSong != NULL) fclose(currentSong);
@@ -112,10 +184,14 @@ int main(int argc,char** argv){
 						strncpy(song_id, &cmd[6], 3);
 						song_id[3] = 0;
 						char* filename = getSongFilename(songList, atoi(song_id));
+						if (strcmp(filename, "") == 0){
+							printf("\nERROR: Cannot retrieve selected filename.");
+							break;
+						}
 						char file[512];
 						sprintf(file,"./songs/%s",filename);
 						currentSong = fopen(file, "r");
-						if (currentSong < 0) printf(" File not found.");
+						if (currentSong < 0) printf("\nERROR: File not found.");
 						else{
 							printf(" Done!");
 							fseek(currentSong, 0, SEEK_END);
@@ -133,19 +209,54 @@ int main(int argc,char** argv){
 							printf(" Done!");
 							fseek(currentSong, 0, SEEK_SET);
 							char* buffer = malloc(stream_size);
-							fread(buffer, stream_size, 1, currentSong);
+							int bytesRead = fread(buffer, stream_size, 1, currentSong);
 							printf("\nGET_SONG: Sending first block...");
 							send(my_socket->sock, buffer, size, 0);
 							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
-							printf(" Done!");
+							printf(" Done! (%i bytes)", bytesRead);
+							BUFFER_SIZE = stream_size;
+							free(buffer);
 						}
 						break;
-					case SMURF_UPDATE_CACHE: // TODO
+						
+					// Update locale stream cache
+					case SMURF_UPDATE_CACHE:
 						if (currentSong == NULL) printf("\nERROR: No opened song!");
+						char* buffer = malloc(BUFFER_SIZE);
+						int bytesRead = fread(buffer, BUFFER_SIZE, 1, currentSong);
+						printf("\nUPDATE_CACHE: Sending next block...");
+						send(my_socket->sock, buffer, bytesRead, 0);
+						while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+						printf(" Done! (%i bytes)", bytesRead);
+						if (bytesRead < BUFFER_SIZE){
+							printf("\nUPDATE_CACHE: Sending end song command...");
+							send(my_socket->sock, "EOF", 3, 0);
+							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+							printf(" Done!");
+						}else{
+							printf("\nUPDATE_CACHE: Sending next block command...");
+							send(my_socket->sock, "OK!", 3, 0);
+							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+							printf(" Done!");
+						}
+						free(buffer);
+						
+					// Close SMuRF
+					case SMURF_ABORT_CONNECTION:
+						printf("\nABORT_CONNECTION: Closing opened resources...");
+						if (currentSong != NULL) fclose(currentSong);
+						close(my_socket->sock);
+						printf(" Done!");
+						printf("\n\n\nBye bye!");
 						break;
+					
 				}
 			}else printf("ERROR: Invalid command! (%s)\n",cmd);
-			memset(&cmd, 0, 10);
+			
+			// Closing application or resetting command listener memory
+			if (closing) break;
+			else memset(&cmd, 0, 10);
+			
 		}
 	}
 	
