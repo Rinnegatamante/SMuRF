@@ -38,10 +38,8 @@
 #include <unistd.h>
 #include <3ds.h>
 #include "Graphics.h"
-#define LODEPNG_COMPILE_PNG
 #include "lodepng.h"
-
-#define CONFIG_3D_SLIDERSTATE (*(float*)0x1FF81080)
+#include "sf2d.h"
 
 typedef unsigned short u16;
 u8* TopLFB;
@@ -49,20 +47,45 @@ u8* TopRFB;
 u8* BottomFB;
 
 void RefreshScreen(){
-TopLFB = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
-if (CONFIG_3D_SLIDERSTATE != 0) TopRFB = gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, NULL, NULL);
-BottomFB = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+	TopLFB = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
+	BottomFB = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 }
 
 void ClearScreen(int screen){
-	if (screen==1){
-		memset(BottomFB,0x00,230400);
-	}else{
-		memset(TopLFB,0x00,288000);
-	if (CONFIG_3D_SLIDERSTATE != 0){
-		memset(TopRFB,0x00,288000);
-	}
-	}
+	if (screen==1) memset(BottomFB,0x00,230400);
+	else memset(TopLFB,0x00,288000);
+}
+
+void initScene(){
+	sf2d_init();
+	sf2d_set_clear_color(RGBA8(0x48, 0xB9, 0xFF, 0xFF));
+}
+
+void initBlend(int screen){
+	gfxScreen_t my_screen;
+	if (screen == 0) my_screen = GFX_TOP;
+	else my_screen = GFX_BOTTOM;
+	sf2d_start_frame(my_screen, GFX_LEFT);
+}
+
+void fillRect(float x1, float y1, float x2, float y2, u32 color){
+	sf2d_draw_rectangle(x1, y1, x2, y2, RGBA8((color >> 16) & 0xFF, (color >> 8) & 0xFF, (color) & 0xFF, (color >> 24) & 0xFF));
+}
+
+void drawLine(float x1, float y1, float x2, float y2, u32 color){
+	sf2d_draw_line(x1, y1, x2, y2, RGBA8((color >> 16) & 0xFF, (color >> 8) & 0xFF, (color) & 0xFF, (color >> 24) & 0xFF));
+}
+
+void drawAsset(float x, float y, gpu_text* asset){
+	sf2d_draw_texture(asset->tex, x, y);
+}
+
+void termBlend(){
+	sf2d_end_frame();
+}
+
+void endScene(){
+	sf2d_fini();
 }
 
 Bitmap* decodePNGfile(const char* filename)
@@ -111,3 +134,4 @@ Bitmap* decodePNGfile(const char* filename)
 	result->bitperpixel = 32;
 	return result;
 }
+
