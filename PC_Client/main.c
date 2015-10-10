@@ -11,6 +11,13 @@
 #include <fcntl.h>
 #define u32 uint32_t
 
+// Supported formats list
+enum{
+	WAV_PCM16 = 0,
+	OGG_VORBIS = 1,
+	AIFF_PCM16 = 2,
+};
+
 // Structures definition
 typedef struct{
 	u32 sock;
@@ -18,6 +25,7 @@ typedef struct{
 } Socket;
 typedef struct{
 	char name[256];
+	uint8_t format;
 	void* next;
 } songlist;
 
@@ -60,12 +68,32 @@ int populateDatabase(DIR* folder){
 	for (;;){
 		struct dirent* curFile;
 		if ((curFile = readdir(folder)) != NULL) {
-			if (idx == 0){
-				songList = malloc(sizeof(songlist));
-				pointer = songList; 
-			}else{
-				pointer->next = malloc(sizeof(songlist));
-				pointer = pointer->next;
+			char fullName[512];
+			sprintf(fullName, "./songs/%s", curFile->d_name);
+			FILE* file = fopen(fullName,"r");
+			if (file < 0) continue;
+			else{
+				if (idx == 0){
+					songList = malloc(sizeof(songlist));
+					pointer = songList; 
+				}else{
+					pointer->next = malloc(sizeof(songlist));
+					pointer = pointer->next;
+				}
+				uint32_t magic;
+				fread(&magic, 4, 1, file);
+				fclose(file);
+				switch (magic){
+					case 0x46464952:
+						pointer->format = WAV_PCM16;
+						break;
+					case 0x5367674F:
+						pointer->format = OGG_VORBIS;
+						break;
+					case 0x2E736E64:
+						pointer->format = AIFF_PCM16;
+						break;
+				}
 			}
 			strcpy(pointer->name,curFile->d_name);
 		}else break;
