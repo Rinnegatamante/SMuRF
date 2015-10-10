@@ -17,6 +17,7 @@ int main(){
 	aptOpenSession();
 	Result ret=APT_SetAppCpuTimeLimit(NULL, 30);
 	aptCloseSession();
+	CSND_initialize(NULL);
 	
 	// Variables definition
 	Socket* Server = NULL;
@@ -53,6 +54,7 @@ int main(){
 	}
 	
 	// Term services
+	CSND_shutdown();
 	if (socketingStatus) termSocketing();
 	hidExit();
 	gfxExit();
