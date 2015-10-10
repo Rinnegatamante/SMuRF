@@ -24,7 +24,7 @@ typedef struct{
 
 bool isWifiOn();
 u8 getWifiLevel();
-char* getIPAddress();
+void getIPAddress(char* ip_address);
 void initSocketing();
 void termSocketing();
 Socket* createServerSocket(int port);

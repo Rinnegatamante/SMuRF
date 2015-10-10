@@ -19,11 +19,9 @@ bool isWifiOn(){
 	return 1;
 }
 
-char* getIPAddress(){
+void getIPAddress(char* ip_address){
 	u32 ip=(u32)gethostid();
-	char ip_address[64];
 	sprintf(ip_address,"%lu.%lu.%lu.%lu", ip & 0xFF, (ip>>8)&0xFF, (ip>>16)&0xFF, (ip>>24)&0xFF);
-	return ip_address;
 }
 
 u8 getWifiLevel(){
