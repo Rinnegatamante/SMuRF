@@ -79,10 +79,11 @@ Packet* socketRecv(Socket* my_socket, u32 size){
 	u8* data = (u8*)malloc(size);
 	int count = recv(my_socket->sock, (char*)data, size, 0);
 	
-	if (count == 0) return NULL;
+	if (count <= 0) return NULL;
 	
 	Packet* pkg = (Packet*)malloc(sizeof(Packet));
-	pkg->message = data;
+	pkg->message = (u8*)malloc(count);
+	strncpy((char*)pkg->message, (const char*)data, size);
 	pkg->size = count;
 	return pkg;
 }
@@ -100,7 +101,7 @@ Socket* serverAccept(Socket* my_socket)
 
 	struct sockaddr_in addrAccept;
 	socklen_t cbAddrAccept = sizeof(addrAccept);
-	u32 sockClient = accept(my_socket->sock, (struct sockaddr*)&addrAccept, &cbAddrAccept);
+	int sockClient = accept(my_socket->sock, (struct sockaddr*)&addrAccept, &cbAddrAccept);
 	if (sockClient <= 0) return NULL;
 
 	Socket* incomingSocket = (Socket*) malloc(sizeof(Socket));
