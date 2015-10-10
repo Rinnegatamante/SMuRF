@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #define u32 uint32_t
 
+// Command sample: exec1:200
+
 // Supported formats list
 enum{
 	WAV_PCM16 = 0,
@@ -110,7 +112,7 @@ char* parseSongs(songlist* list, int songs){
 	int idx = 0;
 	while (idx < songs){
 		char filename[128];
-		strncpy(filename, curFile->name, 127);
+		sprintf(filename, "%i%s:", curFile->format, curFile->name);
 		if ((idx + 1) == songs) filename[127] = 0;
 		else filename[127] = ':';
 		strncpy(&query[idx*128], filename, 128); 
@@ -127,8 +129,8 @@ int main(int argc,char** argv){
 	// Writing info on the screen
 	printf("+-------------------------+\n");
 	printf("|SMuRF Command-Line Client|\n");
-	printf("|    Version: 0.1 BETA    |");
-	printf("\n+-------------------------+\n\n");
+	printf("|    Version: 0.1 BETA    |\n");
+	printf("+-------------------------+\n\n");
 
 	// Creating client socket
 	Socket* my_socket = (Socket*) malloc(sizeof(Socket));
@@ -141,6 +143,8 @@ int main(int argc,char** argv){
 		printf("\nFailed creating socket.");	
 		return -1;
 	}else printf("\nClient socket created on port 5000");
+	
+	sleep(1);
 	
 	// Connecting to server
 	int err = connect(my_socket->sock, (struct sockaddr*)&my_socket->addrTo, sizeof(my_socket->addrTo));
@@ -156,9 +160,8 @@ int main(int argc,char** argv){
 	while (count < 0){
 		count = recv(my_socket->sock, &data, 13, 0);
 	}
-	printf(data);
 	if (strncmp(data,"WELCOME SMURF",13) == 0){
-		printf("\n\n\n\n\nWelcome to SMuRF!\n\nWaiting for commands...\n\nDebug Console:");	
+		printf("\n\n\n\n\nWelcome to SMuRF!\n\nWaiting for commands...\n\nDebug Console:\n");	
 	}else{
 		printf("\nWrong magic received, connection aborted.");
 		close(my_socket->sock);
@@ -168,7 +171,6 @@ int main(int argc,char** argv){
 	//SMuRF command listener
 	char cmd[10];
 	char cmd_id[2];
-	count = recv(my_socket->sock, &cmd, 10, 0);
 	while (1){
 		count = recv(my_socket->sock, &cmd, 10, 0);
 		if (count > 0){
@@ -179,7 +181,7 @@ int main(int argc,char** argv){
 				cmd_id[1] = 0;
 				switch (atoi(cmd_id)){
 				
-					// Retrive songs list
+					// Retrieve songs list
 					case SMURF_GET_SONG_LIST:
 						printf("\nGET_SONG_LIST: Retrieving songs list...");
 						DIR* songsdir = opendir("./songs");
@@ -190,14 +192,15 @@ int main(int argc,char** argv){
 						char* query;
 						if (totalSongs == 0){ 
 							query = malloc(2);
-							query[0] = ":";
+							query[0] = ':';
 							query[1] = 0;
-							dim = 2;
+							dim = 1;
 						}else{
-							char* query = parseSongs(songList, totalSongs);
+							query = parseSongs(songList, totalSongs);
 							dim = 128*totalSongs;
 						}
 						printf("\nGET_SONG_LIST: Sending songs list...");
+						sleep(1);
 						send(my_socket->sock, query, dim, 0);
 						while (recv(my_socket->sock, NULL, 2, 0) < 1){}
 						printf(" Done!");
@@ -229,6 +232,7 @@ int main(int argc,char** argv){
 								stream_size = stream_size / 2;
 							}
 							printf("\nGET_SONG: Sending buffer size info...");
+							sleep(1);
 							char info[64];
 							memset(&info, 0, 64);
 							sprintf(info, "%i", stream_size);
@@ -239,6 +243,7 @@ int main(int argc,char** argv){
 							char* buffer = malloc(stream_size);
 							int bytesRead = fread(buffer, stream_size, 1, currentSong);
 							printf("\nGET_SONG: Sending first block...");
+							sleep(1);
 							send(my_socket->sock, buffer, size, 0);
 							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
 							printf(" Done! (%i bytes)", bytesRead);
@@ -253,16 +258,19 @@ int main(int argc,char** argv){
 						char* buffer = malloc(BUFFER_SIZE);
 						int bytesRead = fread(buffer, BUFFER_SIZE, 1, currentSong);
 						printf("\nUPDATE_CACHE: Sending next block...");
+						sleep(1);
 						send(my_socket->sock, buffer, bytesRead, 0);
 						while (recv(my_socket->sock, NULL, 2, 0) < 1){}
 						printf(" Done! (%i bytes)", bytesRead);
 						if (bytesRead < BUFFER_SIZE){
 							printf("\nUPDATE_CACHE: Sending end song command...");
+							sleep(1);
 							send(my_socket->sock, "EOF", 3, 0);
 							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
 							printf(" Done!");
 						}else{
 							printf("\nUPDATE_CACHE: Sending next block command...");
+							sleep(1);
 							send(my_socket->sock, "OK!", 3, 0);
 							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
 							printf(" Done!");
@@ -279,7 +287,7 @@ int main(int argc,char** argv){
 						break;
 					
 				}
-			}else printf("ERROR: Invalid command! (%s)\n",cmd);
+			}else printf("\nERROR: Invalid command! (%s)\n",cmd);
 			
 			// Closing application or resetting command listener memory
 			if (closing) break;
