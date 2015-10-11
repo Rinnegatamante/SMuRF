@@ -81,7 +81,9 @@ int populateDatabase(DIR* folder){
 	songlist* pointer = NULL;
 	for (;;){
 		struct dirent* curFile;
-		if ((curFile = readdir(folder)) != NULL) {
+		
+		curFile = readdir(folder);
+		if (curFile) {
 			char fullName[512];
 			sprintf(fullName, "./songs/%s", curFile->d_name);
 			if (isDir(fullName)) continue;
@@ -108,8 +110,8 @@ int populateDatabase(DIR* folder){
 						pointer->format = AIFF_PCM16;
 						break;
 				}
+				strcpy(pointer->name,curFile->d_name);
 			}
-			strcpy(pointer->name,curFile->d_name);
 		}else break;
 		idx++;
 	}
@@ -129,6 +131,7 @@ char* parseSongs(songlist* list, int songs){
 		else filename[127] = ':';
 		strncpy(&query[idx*128], filename, 128); 
 		idx++;
+		curFile = curFile->next;
 	}
 	return query;
 }
