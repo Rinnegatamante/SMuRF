@@ -37,6 +37,7 @@ INCLUDES	:=	3DS_Server/include
 APP_TITLE	:=	SMuRF
 APP_AUTHOR	:=	Rinnegatamante
 APP_DESCRIPTION	:=	Simple Music Reproducer & Fetcher
+ICON		:=	3DS_Server/icon.png
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
