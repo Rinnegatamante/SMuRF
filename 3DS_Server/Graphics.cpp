@@ -40,6 +40,7 @@
 #include "Graphics.h"
 #include "lodepng.h"
 #include "sf2d.h"
+#include "logo.h"
 
 typedef unsigned short u16;
 u8* TopLFB;
@@ -88,40 +89,13 @@ void endScene(){
 	sf2d_fini();
 }
 
-Bitmap* decodePNGfile(const char* filename)
+Bitmap* decodePNGbuffer(unsigned char* in, u64 size)
 {
-	Handle fileHandle;
 	Bitmap* result;
-	u64 size;
-	u32 bytesRead;
 	unsigned char* out;
-	unsigned char* in;
 	unsigned int w, h;
-	
-	FS_path filePath = FS_makePath(PATH_CHAR, filename);
-	FS_archive archive = (FS_archive) { ARCH_SDMC, (FS_path) { PATH_EMPTY, 1, (u8*)"" }};
-	FSUSER_OpenFileDirectly(NULL, &fileHandle, archive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
-	
-	FSFILE_GetSize(fileHandle, &size);
-	
-	in = (unsigned char*)malloc(size);
-	
-	if(!in) {
-		FSFILE_Close(fileHandle);
-		svcCloseHandle(fileHandle);
-		return 0;
-	}
-	
-	FSFILE_Read(fileHandle, &bytesRead, 0x00, in, size);
-	FSFILE_Close(fileHandle);
-	svcCloseHandle(fileHandle);
 		
-		if(lodepng_decode32(&out, &w, &h, in, size) != 0) {
-			free(in);
-			return 0;
-		}
-	
-	free(in);
+	if(lodepng_decode32(&out, &w, &h, in, size) != 0) return 0;
 	
 	result = (Bitmap*)malloc(sizeof(Bitmap));
 	if(!result) {
@@ -135,3 +109,14 @@ Bitmap* decodePNGfile(const char* filename)
 	return result;
 }
 
+gpu_text* getLogo() {
+	Bitmap* bitmap = decodePNGbuffer(logo,size_logo);
+	sf2d_texture *tex = sf2d_create_texture_mem_RGBA8(bitmap->pixels, bitmap->width, bitmap->height, TEXFMT_RGBA8, SF2D_PLACE_RAM);
+	gpu_text* result = (gpu_text*)malloc(sizeof(gpu_text));
+	result->tex = tex;
+	result->width = bitmap->width;
+	result->height = bitmap->height;
+	free(bitmap->pixels);
+	free(bitmap);
+    return result;
+}
