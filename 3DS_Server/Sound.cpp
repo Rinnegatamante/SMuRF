@@ -9,32 +9,8 @@
 //#include "include/ogg/vorbisfile.h"
 
 u8* tmp_buf;
-struct Music{
-	u32 magic;
-	u32 samplerate;
-	u16 bytepersample;
-	u8* audiobuf;
-	u8* audiobuf2;
-	u32 size;
-	u32 mem_size;
-	Handle sourceFile;
-	u32 startRead;
-	char author[256];
-	char title[256];
-	u32 moltiplier;
-	u64 tick;
-	bool isPlaying;
-	u32 ch;
-	u32 ch2;
-	bool streamLoop;
-	bool big_endian;
-	u8 encoding;
-	u32* thread;
-	u32 audio_pointer;
-	u32 package_size;
-	u32 total_packages_size;
-	u32 stream_packages_size;
-};
+u8* streamCache;
+extern Songlist* getSong(u32 idx);
 
 volatile bool closeStream = false;
 Handle updateStream;
@@ -42,7 +18,6 @@ Handle streamThread;
 
 int STREAM_MAX_ALLOC = 524288;
 char pcmout[2048];
-extern u8* tmp_buf;
 
 /*void streamOGG(void* arg){ //TODO: Solve looping sound issues
 	Music* src = (Music*)arg;
@@ -596,28 +571,46 @@ void streamWAV(void* arg){
 	return 1;
 }*/
 
-Music* initWav()
+// playSong: Plays a song with network streaming feature
+Music* prepareSong(Socket* Client, u32 idx)
 {
-	bool mem_size = true;
-	//Handle fileHandle;
-	//FS_archive sdmcArchive=(FS_archive){ARCH_SDMC, (FS_path){PATH_EMPTY, 1, (u8*)""}};
-	//FS_path filePath=FS_makePath(PATH_CHAR, file_tbo);
-	//Result ret=FSUSER_OpenFileDirectly(NULL, &fileHandle, sdmcArchive, filePath, FS_OPEN_READ, FS_ATTRIBUTE_NONE);
-	//if(ret) return luaL_error(L, "error opening file");
-	u32 magic,samplerate,bytesRead,jump,chunk=0x00000000;
+	// Init resources
 	u16 audiotype;
-	//FSFILE_Read(fileHandle, &bytesRead, 0, &magic, 4);
-	Music* wav_file = (Music*)malloc(sizeof(Music));
-	if (magic == 0x46464952){
-		strcpy(wav_file->author,"");
-		strcpy(wav_file->title,"");
-		u64 size;
-		wav_file->big_endian = false;
-		u32 pos = 16;	
+	u64 size;
+	Music* songFile = (Music*)malloc(sizeof(Music));
+	Packet* pkg = NULL;
+	
+	// Sending command to client
+	char cmd[10];
+	sprintf(cmd, "exec1:%i", idx);
+	cmd[9] = 0;
+	socketSend(Client, cmd);
+	
+	// Getting file info
+	while (pkg == NULL) pkg = socketRecv(Client, 64);
+	char* infoPacket = (char*)pkg->message;
+	Songlist* song = getSong(idx);
+	
+	u64 fileSize = atoi(infoPacket);
+	socketSend(Client, "OK");
+	if (song->format == WAV_PCM16){
+		
+		// Getting and parsing header file
+		linearFree(pkg->message);
+		free(pkg);
+		pkg = NULL;
+		while (pkg == NULL) pkg = socketRecv(Client, 256);
+		char* header = (char*)pkg->message;
+		u32 header_size = pkg->size;
+		u32 samplerate,jump,chunk=0x00000000;
+		strcpy(songFile->author,"");
+		strcpy(songFile->title,"");
+		songFile->big_endian = false;
+		u32 pos = 16;
 		while (chunk != 0x61746164){
-			//FSFILE_Read(fileHandle, &bytesRead, pos, &jump, 4);
+			strncpy((char*)&jump, &header[pos], 4);
 			pos=pos+4+jump;
-			//FSFILE_Read(fileHandle, &bytesRead, pos, &chunk, 4);	
+			strncpy((char*)&chunk, &header[pos], 4);
 			pos=pos+4;
 	
 			//Chunk LIST detection
@@ -626,99 +619,76 @@ Music* initWav()
 				u32 subchunk;
 				u32 subchunk_size;
 				u32 sub_pos = pos+4;
-				//FSFILE_Read(fileHandle, &bytesRead, sub_pos, &subchunk, 4);
+				strncpy((char*)&subchunk, &header[sub_pos], 4);
 				if (subchunk == 0x4F464E49){
 					sub_pos = sub_pos+4;
-					//FSFILE_Read(fileHandle, &bytesRead, pos, &chunk_size, 4);
+					strncpy((char*)&chunk_size, &header[pos], 4);
 					while (sub_pos < (chunk_size + pos + 4)){
-						//FSFILE_Read(fileHandle, &bytesRead, sub_pos, &subchunk, 4);
-						//FSFILE_Read(fileHandle, &bytesRead, sub_pos+4, &subchunk_size, 4);
+						strncpy((char*)&subchunk, &header[sub_pos], 4);
+						strncpy((char*)&subchunk_size, &header[sub_pos + 4], 4);
 						if (subchunk == 0x54524149){
 							char* author = (char*)malloc(subchunk_size * sizeof(char));
-							//FSFILE_Read(fileHandle, &bytesRead, sub_pos+8, author, subchunk_size);
-							strcpy(wav_file->author,author);
-							wav_file->author[subchunk_size+1] = 0;
+							strncpy(author, &header[sub_pos + 8], subchunk_size);
+							strcpy(songFile->author,author);
+							songFile->author[subchunk_size+1] = 0;
 							free(author);
 						}else if (subchunk == 0x4D414E49){
 							char* title = (char*)malloc(subchunk_size * sizeof(char));
-							//FSFILE_Read(fileHandle, &bytesRead, sub_pos+8, title, subchunk_size);
-							strcpy(wav_file->title,title);
-							wav_file->title[subchunk_size+1] = 0;
+							strncpy(title, &header[sub_pos + 8], subchunk_size);
+							strcpy(songFile->title,title);
+							songFile->title[subchunk_size+1] = 0;
 							free(title);
 						}
 						sub_pos = sub_pos + 8 + subchunk_size;
 						u8 checksum;
-						//FSFILE_Read(fileHandle, &bytesRead, sub_pos, &checksum, 1); //Prevent errors switching subchunks
+						strncpy((char*)&checksum, &header[sub_pos], 1);
 						if (checksum == 0) sub_pos++;
 					}
 				}
 			}
-	
+		
 		}
-		//FSFILE_GetSize(fileHandle, &size);
-		//FSFILE_Read(fileHandle, &bytesRead, 22, &audiotype, 2);
-		//FSFILE_Read(fileHandle, &bytesRead, 24, &samplerate, 4);
+		strncpy((char*)&audiotype, &header[22], 2);
+		strncpy((char*)&samplerate, &header[24], 4);
 		u16 raw_enc;
-		//FSFILE_Read(fileHandle, &bytesRead, 20, &raw_enc, 2);
-		//FSFILE_Read(fileHandle, &bytesRead, 32, &(wav_file->bytepersample), 2);
-		if (raw_enc == 0x01) wav_file->encoding = CSND_ENCODING_PCM16;
-		else if (raw_enc == 0x11) wav_file->encoding = CSND_ENCODING_IMA_ADPCM;
-		wav_file->mem_size = mem_size;
-		wav_file->samplerate = samplerate;
-		if (audiotype == 1){
-			if (mem_size){
-				wav_file->moltiplier = 1;
-				wav_file->isPlaying = false;
-				wav_file->mem_size = (size-(pos+4));
-				while (wav_file->mem_size > STREAM_MAX_ALLOC){
-					wav_file->mem_size = wav_file->mem_size / 2;
-				}
-				//wav_file->sourceFile = fileHandle;
-				wav_file->startRead = (pos+4);
-				if (raw_enc == 0x11){ // ADPCM Decoding
-					u32 buffer_headers_num = (wav_file->mem_size) / wav_file->bytepersample;
-					u8* tmp_audiobuf = (u8*)linearAlloc(wav_file->mem_size);
-					//FSFILE_Read(fileHandle, &bytesRead, pos+4, tmp_audiobuf, wav_file->mem_size);
-					wav_file->audiobuf = (u8*)linearAlloc(wav_file->mem_size-buffer_headers_num*4);
-					int z=0,i=0;
-					while (i < wav_file->mem_size){
-						wav_file->audiobuf[z] = tmp_audiobuf[i];
-						z++;
-						i++;
-						if ((i % wav_file->bytepersample) == 0) i=i+4;
-					}
-					tmp_buf = tmp_audiobuf;
-				}else{ // PCM-16 Decoding
-					wav_file->audiobuf = (u8*)linearAlloc(wav_file->mem_size);
-					//FSFILE_Read(fileHandle, &bytesRead, wav_file->startRead, wav_file->audiobuf, wav_file->mem_size);
-				}
-				wav_file->audiobuf2 = NULL;
-				wav_file->size = size;
-			}else{
-				if (raw_enc == 0x11){ // ADPCM Decoding
-					u32 headers_num = (size-(pos+4)) / wav_file->bytepersample;
-					u8* tmp_audiobuf = (u8*)linearAlloc(size-(pos+4));
-					//FSFILE_Read(fileHandle, &bytesRead, pos+4, tmp_audiobuf, size-(pos+4));
-					wav_file->audiobuf = (u8*)linearAlloc(size-(pos+4)-headers_num*4);
-					int z=0,i=0;
-					while (i < size){
-						wav_file->audiobuf[z] = tmp_audiobuf[i];
-						z++;
-						i++;
-						if ((i % wav_file->bytepersample) == 0) i=i+4;
-					}
-					tmp_buf = tmp_audiobuf;
-					size = size-(pos+4) - headers_num * 4;
-				}else{ // PCM-16 Decoding
-					wav_file->audiobuf = (u8*)linearAlloc(size-(pos+4));
-					//FSFILE_Read(fileHandle, &bytesRead, pos+4, wav_file->audiobuf, size-(pos+4));
-					size = size-(pos+4);
-				}
-				wav_file->audiobuf2 = NULL;
-				wav_file->size = size;
-				wav_file->startRead = 0;
+		strncpy((char*)&raw_enc, &header[20], 2);
+		if (raw_enc == 0x01) songFile->encoding = CSND_ENCODING_PCM16;
+		else if (raw_enc == 0x11) songFile->encoding = CSND_ENCODING_IMA_ADPCM;
+		songFile->mem_size = fileSize - header_size;
+		u32 REAL_STREAM_MAX_ALLOC;
+		if (audiotype == 1) REAL_STREAM_MAX_ALLOC = STREAM_MAX_ALLOC;
+		else REAL_STREAM_MAX_ALLOC = STREAM_MAX_ALLOC * 10;
+		while (songFile->mem_size > REAL_STREAM_MAX_ALLOC){
+			songFile->mem_size = songFile->mem_size / 2;
+		}
+		socketSend(Client, "OK");
+		linearFree(pkg->message);
+		free(pkg);
+		pkg = NULL;
+		if (raw_enc == 0x11){ // TODO: ADPCM support
+		}else if (raw_enc == 0x01){
+			if (audiotype == 1){
+				while (pkg == NULL) pkg = socketRecv(Client, songFile->mem_size);
+				songFile->audiobuf = pkg->message;
+				free(pkg);
+				pkg = NULL;
+				socketSend(Client, "exec2:0000");
+				while (pkg == NULL) pkg = socketRecv(Client, songFile->mem_size);
+				streamCache = pkg->message;
+				free(pkg);
+				songFile->audiobuf2 = NULL;
+				songFile->size = fileSize;
 			}
-		}else{
+		}
+		songFile->samplerate = samplerate;
+		songFile->moltiplier = 1;
+		songFile->isPlaying = false;
+		strncpy((char*)&(songFile->bytepersample), &header[32], 2);
+	
+	}
+	
+	return songFile;
+		/*}else{
 			// I must reordinate my buffer in order to play stereo sound (Thanks CSND/FS libraries .-.)
 			u32 size_tbp;
 			if (mem_size){
@@ -778,9 +748,7 @@ Music* initWav()
 				}
 			}
 		}
-		wav_file->magic = 0x4C534E44;
-	}
-	return wav_file;
+		wav_file->magic = 0x4C534E44;*/
 }
 
 /*static u32 Endian_UInt32_Conversion(u32 value){
@@ -954,7 +922,7 @@ void startMusic(Music* src)
 		non_native_encode = true;
 	}*/
 	if (src->audiobuf2 == NULL){
-		if (src->mem_size > 0){
+		/*if (src->mem_size > 0){
 		if (loop == 0) src->streamLoop = false;
 		else src->streamLoop = true;
 		svcCreateEvent(&updateStream,0);
@@ -963,9 +931,9 @@ void startMusic(Music* src)
 		svcSignalEvent(updateStream);
 		Result ret = svcCreateThread(&streamThread, streamFunction, (u32)src, &threadStack[2048], 0x18, 1);
 		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), src->mem_size, 0xFFFF, 0xFFFF);
-		}else{
+		}else{*/
 		My_CSND_playsound(ch, loop, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), src->size, 0xFFFF, 0xFFFF);
-		}
+		//}
 		src->ch = ch;
 		src->tick = osGetTime();
 		CSND_setchannel_playbackstate(ch, 1);

@@ -1,6 +1,6 @@
 #include <3ds.h>
-#include "Network.h"
 #include "Graphics.h"
+#include "Audio.h"
 #include "main_font.h"
 #include "khax.h"
 #define TOP_SCREEN true
@@ -19,20 +19,23 @@ gpu_text* logo;
 int idx;
 Font F;
 u32 total;
+Music* openedSong = NULL;
+Songlist* pc_songs = NULL;
 
-// Supported formats list
-enum{
-	WAV_PCM16 = 0,
-	OGG_VORBIS = 1,
-	AIFF_PCM16 = 2,
-};
-
-// Structures definition
-typedef struct{
-	char name[256];
-	u8 format;
-	void* next;
-} Songlist;
+// getSong: Retrieve entry for a selected song
+Songlist* getSong(u32 idx){
+	u32 i = 0;
+	Songlist* song = pc_songs;
+	if (song == NULL) return NULL;
+	while (i < idx){
+		if (song->next == NULL) return NULL;
+		else{
+			song = (Songlist*)song->next;
+			i++;
+		}
+	}
+	return song;
+}
 
 // fetchSonglist: Gets songlist from a client
 Songlist* fetchSonglist(Socket* Client, u32* totalSongs){
@@ -55,7 +58,7 @@ Songlist* fetchSonglist(Socket* Client, u32* totalSongs){
 		}
 		notReceived = false;
 		if (pkg->size == 1){
-			free(pkg->message);
+			linearFree(pkg->message);
 			free(pkg);
 			return NULL;
 		}else{
@@ -71,7 +74,7 @@ Songlist* fetchSonglist(Socket* Client, u32* totalSongs){
 			list->next = (Songlist*)malloc(sizeof(Songlist));
 			old = list;
 			list = (Songlist*)list->next;
-			free(pkg->message);
+			linearFree(pkg->message);
 			free(pkg);
 			idx++;
 		}
@@ -94,7 +97,7 @@ void drawBottomUI(){
 void drawTopUI(){
 	initBlend(UPPER);
 	drawAsset(0, 0, logo);
-	fillRect(0, 400, 220, 20, black);
+	fillRect(0, 220, 400, 20, dark_cyan);
 	termBlend();
 }
 
@@ -147,7 +150,6 @@ int main(){
 	bool socketingStatus = false;
 	char IP[64];
 	char alert[64];
-	Songlist* pc_songs = NULL;
 	bool welcomeSent = false;
 	
 	// Initializing resources
@@ -188,6 +190,8 @@ int main(){
 					}else if ((pad & KEY_DLEFT) == KEY_DLEFT){
 						idx = idx - 8;
 						if (idx < 1) idx = 1;
+					}else if ((pad & KEY_A) == KEY_A){
+						if (openedSong == NULL) openedSong = prepareSong(Client, idx);
 					}
 				}
 			}else{
