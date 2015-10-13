@@ -25,6 +25,7 @@ typedef struct{
 	u32 sock;
 	struct sockaddr_in addrTo;
 } Socket;
+
 typedef struct{
 	char name[256];
 	uint8_t format;
@@ -48,25 +49,26 @@ enum{
 FILE* currentSong = NULL;
 songlist* songList = NULL;
 uint8_t closing = 0;
+uint32_t STREAM_SIZE = 0;
 
 // print: Print a string on stdout
 void print(char* text){
 	write(1, text, strlen(text));
 }
 
-// getSongFilename: Retrieve filename for a selected song
-char* getSongFilename(songlist* list, int idx){
+// getSong: Retrieve entry for a selected song
+songlist* getSong(songlist* list, int idx){
 	int i = 0;
 	songlist* song = list;
-	if (song == NULL) return "";
+	if (song == NULL) return NULL;
 	while (i < idx){
-		if (song->next == NULL) return "";
+		if (song->next == NULL) return NULL;
 		else{
 			song = song->next;
 			i++;
 		}
 	}
-	return song->name;
+	return song;
 }
 
 bool isDir(const char* target){
@@ -228,37 +230,63 @@ int main(int argc,char** argv){
 						char song_id[4];
 						strncpy(song_id, &cmd[6], 3);
 						song_id[3] = 0;
-						char* filename = getSongFilename(songList, atoi(song_id));
-						if (strcmp(filename, "") == 0){
-							print("\nERROR: Cannot retrieve selected filename.");
-						}else{
+						songlist* song = getSong(songList, atoi(song_id));
+						if (song == NULL) print("\nERROR: Cannot retrieve selected filename.");
+						else{
+							char* filename = song->name;
 							char file[512];
 							sprintf(file,"./songs/%s",filename);
 							currentSong = fopen(file, "r");
+							int header_size = 0;
 							if (currentSong < 0) print("\nERROR: File not found.");
 							else{
 								print(" Done!");
 								fseek(currentSong, 0, SEEK_END);
 								int size = ftell(currentSong);
-								int stream_size = size;
-								while (stream_size > MAX_BUFFER_SIZE){
-									stream_size = stream_size / 2;
+								if (song->format == WAV_PCM16){
+									fseek(currentSong, 0x10, SEEK_SET);
+									u32 jmp;
+									fread(&jmp, 4, 1, currentSong);
+									fseek(currentSong, jmp, SEEK_CUR);
+									char chunk_name[5];
+									memset(&chunk_name, 0, 5);
+									fread(&chunk_name, 4, 1, currentSong);
+									while (strcmp(chunk_name, "data") != 0){
+										fread(&jmp, 4, 1, currentSong);
+										fseek(currentSong, jmp, SEEK_CUR);
+										fread(&chunk_name, 4, 1, currentSong);
+									}
+									header_size = ftell(currentSong) + 4;
 								}
-								print("\nGET_SONG: Sending buffer size info...");
+								STREAM_SIZE = size - header_size;
+								while (STREAM_SIZE > MAX_BUFFER_SIZE){
+									STREAM_SIZE = STREAM_SIZE / 2;
+								}
+								print("\nGET_SONG: Sending song info...");
 								char info[64];
 								memset(&info, 0, 64);
-								sprintf(info, "%i", stream_size);
+								sprintf(info, "%i", size);
 								write(my_socket->sock, info, 64);
-								while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+								while (recv(my_socket->sock, &data, 2, 0) < 1){}
 								print(" Done!");
 								fseek(currentSong, 0, SEEK_SET);
-								char* buffer = malloc(stream_size);
-								int bytesRead = fread(buffer, stream_size, 1, currentSong);
-								print("\nGET_SONG: Sending first block...");
-								write(my_socket->sock, buffer, size);
-								while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+								char* header = malloc(header_size);
+								fread(header, header_size, 1, currentSong);
+								print("\nGET_SONG: Sending file header ( ");
+								char header_size_str[8];
+								sprintf(header_size_str, "%i", header_size);
+								print(header_size_str);
+								print(" bytes )...");
+								write(my_socket->sock, header, header_size);
+								while (recv(my_socket->sock, &data, 2, 0) < 1){}
 								print(" Done!");
-								BUFFER_SIZE = stream_size;
+								free(header);
+								char* buffer = malloc(STREAM_SIZE);
+								fread(buffer, STREAM_SIZE, 1, currentSong);
+								print("\nGET_SONG: Sending first block...");
+								write(my_socket->sock, buffer, STREAM_SIZE);
+								print(" Done!");
+								BUFFER_SIZE = STREAM_SIZE;
 								free(buffer);
 							}
 						}
@@ -276,12 +304,12 @@ int main(int argc,char** argv){
 							if (bytesRead < BUFFER_SIZE){
 								print("\nUPDATE_CACHE: Sending end song command...");
 								write(my_socket->sock, "EOF", 3);
-								while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+								while (recv(my_socket->sock, &data, 2, 0) < 1){}
 								print(" Done!");
 							}else{
 								print("\nUPDATE_CACHE: Sending next block command...");
 								write(my_socket->sock, "OK!", 3);
-								while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+								while (recv(my_socket->sock, &data, 2, 0) < 1){}
 								print(" Done!");
 							}
 							free(buffer);
