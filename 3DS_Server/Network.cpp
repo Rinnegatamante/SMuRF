@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <malloc.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -82,8 +81,9 @@ Packet* socketRecv(Socket* my_socket, u32 size){
 	if (count <= 0) return NULL;
 	
 	Packet* pkg = (Packet*)malloc(sizeof(Packet));
-	pkg->message = (u8*)malloc(count);
-	strncpy((char*)pkg->message, (const char*)data, size);
+	pkg->message = (u8*)linearAlloc(count);
+	strncpy((char*)pkg->message, (const char*)data, count);
+	free(data);
 	pkg->size = count;
 	return pkg;
 }

@@ -21,6 +21,18 @@ typedef struct{
 	u8* message;
 	u32 size;
 } Packet;
+typedef struct{
+	char name[256];
+	u8 format;
+	void* next;
+} Songlist;
+
+// Supported formats list
+enum{
+	WAV_PCM16 = 0,
+	OGG_VORBIS = 1,
+	AIFF_PCM16 = 2,
+};
 
 bool isWifiOn();
 u8 getWifiLevel();
