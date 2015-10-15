@@ -96,8 +96,12 @@ void drawBottomUI(){
 // drawTopUI: Draws top screen UI
 void drawTopUI(){
 	initBlend(UPPER);
-	drawAsset(0, 0, logo);
-	fillRect(0, 220, 400, 20, dark_cyan);
+	if (openedSong == NULL) drawAsset(0, 0, logo);
+	else{
+		drawAsset(0, -50, logo);
+		fillRect(5, 130, 390, 105, black);
+		fillRect(7, 132, 386, 101, white);
+	}
 	termBlend();
 }
 
@@ -136,12 +140,12 @@ int main(){
 	aptOpenSession();
 	Result ret=APT_SetAppCpuTimeLimit(NULL, 30);
 	aptCloseSession();
-	CSND_initialize(NULL);
 	isNinjhax2 = false;
 	if (!hbInit()){
 		khaxInit;
 		hbExit();
 	}else isNinjhax2 = true;
+	CSND_initialize(NULL);
 	initScene();
 	
 	// Variables definition
@@ -177,7 +181,12 @@ int main(){
 					sprintf(alert, "Songs detected: %i", total);
 				}else{
 					drawSongList(pc_songs);				
-					F.drawString(7, 222, alert, Color((white >> 16) & 0xFF, (white >> 8) & 0xFF, (white) & 0xFF), TOP_SCREEN, true);
+					F.drawString(280, 17, alert, Color((white >> 16) & 0xFF, (white >> 8) & 0xFF, (white) & 0xFF), TOP_SCREEN, true);
+					F.drawString(12, 12, "Press A to open selected song.", Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), BOTTOM_SCREEN, true);
+					if (openedSong != NULL){
+						F.drawString(12, 27, "Press B to pause/resume current song.", Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), BOTTOM_SCREEN, true);
+						F.drawString(12, 42,"Press Y to close current song.", Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), BOTTOM_SCREEN, true);
+					}
 					if ((pad & KEY_DUP) == KEY_DUP){
 						idx--;
 						if (idx < 1) idx = total;
@@ -192,6 +201,7 @@ int main(){
 						if (idx < 1) idx = 1;
 					}else if ((pad & KEY_A) == KEY_A){
 						if (openedSong == NULL) openedSong = prepareSong(Client, idx);
+						startMusic(openedSong);
 					}
 				}
 			}else{
@@ -203,7 +213,7 @@ int main(){
 		getIPAddress(IP);
 		char ip_addr[32];
 		sprintf(ip_addr, "IP: %s", IP);
-		F.drawString(257, 222, ip_addr, Color((white >> 16) & 0xFF, (white >> 8) & 0xFF, (white) & 0xFF), TOP_SCREEN, true);
+		F.drawString(280, 2, ip_addr, Color((white >> 16) & 0xFF, (white >> 8) & 0xFF, (white) & 0xFF), TOP_SCREEN, true);
 		gfxFlushBuffers();
 		gfxSwapBuffers();
 		gspWaitForVBlank();
