@@ -283,7 +283,7 @@ int main(int argc,char** argv){
 								free(header);
 								char* buffer = malloc(STREAM_SIZE);
 								fread(buffer, STREAM_SIZE, 1, currentSong);
-								print("\nGET_SONG: Sending first block...");
+								print("\nGET_SONG: Sending first blocks...");
 								write(my_socket->sock, buffer, STREAM_SIZE);
 								print(" Done!");
 								BUFFER_SIZE = STREAM_SIZE;
@@ -295,23 +295,11 @@ int main(int argc,char** argv){
 					}else if (cmd_type == SMURF_UPDATE_CACHE){
 						if (currentSong == NULL) print("\nERROR: No opened song!");
 						else{
-							char* buffer = malloc(BUFFER_SIZE);
-							int bytesRead = fread(buffer, BUFFER_SIZE, 1, currentSong);
+							char* buffer = malloc(BUFFER_SIZE / 2);
+							fread(buffer, BUFFER_SIZE / 2, 1, currentSong);
 							print("\nUPDATE_CACHE: Sending next block...");
-							write(my_socket->sock, buffer, bytesRead);
-							while (recv(my_socket->sock, NULL, 2, 0) < 1){}
+							write(my_socket->sock, buffer, BUFFER_SIZE / 2);
 							print(" Done!");
-							if (bytesRead < BUFFER_SIZE){
-								print("\nUPDATE_CACHE: Sending end song command...");
-								write(my_socket->sock, "EOF", 3);
-								while (recv(my_socket->sock, &data, 2, 0) < 1){}
-								print(" Done!");
-							}else{
-								print("\nUPDATE_CACHE: Sending next block command...");
-								write(my_socket->sock, "OK!", 3);
-								while (recv(my_socket->sock, &data, 2, 0) < 1){}
-								print(" Done!");
-							}
 							free(buffer);
 						}
 						
