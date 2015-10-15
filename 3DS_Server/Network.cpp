@@ -82,7 +82,7 @@ Packet* socketRecv(Socket* my_socket, u32 size){
 	
 	Packet* pkg = (Packet*)malloc(sizeof(Packet));
 	pkg->message = (u8*)linearAlloc(count);
-	strncpy((char*)pkg->message, (const char*)data, count);
+	memcpy(pkg->message, data, count);
 	free(data);
 	pkg->size = count;
 	return pkg;
