@@ -15,27 +15,21 @@ extern Songlist* getSong(u32 idx);
 volatile bool closeStream = false;
 Handle updateStream;
 Handle streamThread;
-volatile u32 songPointer = 0;
+u32 songPointer;
 
 struct cachePackage{
 	Socket* client;
 	Music* song;
 };
 
-Packet* netPack;
-u8* netBuffer;
+int netSize;
+u8 netBuffer[16384];
 
 void heapRecv(Socket* my_socket, u32 size){
 
-	int count = recv(my_socket->sock, (char*)netBuffer, size, 0);
+	int count = recv(my_socket->sock, (char*)netBuffer, size, 0);	
+	netSize = count;
 	
-	if (count <= 0){
-		netPack->size = count;
-		return;
-	}
-	
-	netPack->message = netBuffer;
-	netPack->size = count;
 }
 
 #define STREAM_MAX_ALLOC 524288
@@ -221,7 +215,7 @@ void streamWAV(void* arg){
 				CSND_setchannel_playbackstate(src->ch, 0);
 				if (src->audiobuf2 != NULL) CSND_setchannel_playbackstate(src->ch2, 0);
 				CSND_sharedmemtype0_cmdupdatestate(0);
-			}else if (((control) > ((src->mem_size / 2) * src->moltiplier)) && (src->isPlaying)){
+			}else if ((control > ((src->mem_size / 2) * src->moltiplier)) && (src->isPlaying)){
 				//if ((src->moltiplier % 2) == 1){
 
 					if (src->audiobuf2 == NULL){
@@ -242,18 +236,17 @@ void streamWAV(void* arg){
 							
 							socketSend(Client, "exec2:0000");
 							u32 processedBytes = 0;
-							heapRecv(Client, 16384);
-							while (netPack->size <= 0) heapRecv(Client, 16384);
-							Packet* pkg = netPack;
+							/*heapRecv(Client, 16384);
+							while (netSize <= 0) heapRecv(Client, 16384);
 							while (processedBytes < (src->mem_size / 2) - 10){
-								if (pkg->size == 0){
+								if (netSize == 0){
 									heapRecv(Client, 16384);
 									continue;
 								}
-								memcpy(&streamCache[songPointer + processedBytes], pkg->message, pkg->size);
-								processedBytes = processedBytes + pkg->size;
+								memcpy(&streamCache[songPointer + processedBytes], netBuffer, netSize);
+								processedBytes = processedBytes + netSize;
 								heapRecv(Client, 16384);
-							}
+							}*/
 							if (songPointer == 0) songPointer = src->mem_size / 2;
 							else songPointer = 0;
 						}
@@ -555,7 +548,7 @@ void streamWAV(void* arg){
 	return 1;
 }*/
 
-// playSong: Plays a song with network streaming feature
+// prepareSong: Receive a song with network
 Music* prepareSong(Socket* Client, u32 idx)
 {
 	// Init resources
@@ -911,11 +904,13 @@ static int lua_openaiff(lua_State *L)
 	return 1;
 }*/
 
+// startMusic: Plays a song with network streaming feature
 void startMusic(Socket* sock, Music* src)
 {
 	closeStream = false;
 	src->streamLoop = false; // TODO: Add looping feature
 	songPointer = 0;
+	netSize = 0;
 	u32 ch = 0x08;
 	u32 ch2 = 0x09;
 	bool non_native_encode = false;
@@ -934,11 +929,9 @@ void startMusic(Socket* sock, Music* src)
 		cachePackage* pkg = (cachePackage*)malloc(sizeof(cachePackage));
 		pkg->client = sock;
 		pkg->song = src;
-		netPack = (Packet*)malloc(sizeof(Packet));
-		netBuffer = (u8*)linearAlloc(16384);
 		svcSignalEvent(updateStream);
 		svcCreateThread(&streamThread, streamFunction, (u32)pkg, &threadStack[2048], 0x18, 1);
-		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), src->mem_size, 0xFFFF, 0xFFFF);
+		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)streamCache, (u32*)streamCache, src->mem_size, 0xFFFF, 0xFFFF);
 		src->ch = ch;
 		src->tick = osGetTime();
 		CSND_setchannel_playbackstate(ch, 1);
@@ -964,34 +957,22 @@ void startMusic(Socket* sock, Music* src)
 	src->isPlaying = true;
 }
 
-/*static int lua_closeWav(lua_State *L)
-{
-    int argc = lua_gettop(L);
-    if (argc != 1) return luaL_error(L, "wrong number of arguments");
-	Music* src = (Music*)luaL_checkinteger(L, 1);
-	#ifndef SKIP_ERROR_HANDLING
-		if (src->magic != 0x4C534E44) return luaL_error(L, "attempt to access wrong memory block type");
-	#endif
-	if (src->mem_size > 0){
-		closeStream = true;
-		svcSignalEvent(updateStream);
-		while (closeStream){} // Wait for thread exiting...
-		svcCloseHandle(updateStream);
-		svcCloseHandle(streamThread);
-		free(src->thread);
-		if (src->encoding == CSND_ENCODING_VORBIS){
+void closeMusic(Music* src){
+	closeStream = true;
+	svcSignalEvent(updateStream);
+	while (closeStream){} // Wait for thread exiting...
+	svcCloseHandle(updateStream);
+	svcCloseHandle(streamThread);
+	free(src->thread);
+		/*if (src->encoding == CSND_ENCODING_VORBIS){
 			ov_clear((OggVorbis_File*)src->sourceFile);
 			sdmcExit();
-		}else{
-			//FSFILE_Close(src->sourceFile);
-			svcCloseHandle(src->sourceFile);
-		}
-	}
+		}*/
 	linearFree(src->audiobuf);
 	if (src->audiobuf2 != NULL) linearFree(src->audiobuf2);
-	if (tmp_buf != NULL) linearFree(tmp_buf);
+	//if (tmp_buf != NULL) linearFree(tmp_buf);
+	linearFree(streamCache);
 	free(src);
-	return 0;
 }
 
 static int lua_pause(lua_State *L)
@@ -1073,28 +1054,6 @@ int argc = lua_gettop(L);
 	if ((src->encoding == CSND_ENCODING_IMA_ADPCM) && (src->audiobuf2 != NULL) && (src->mem_size == 0)) lua_pushinteger(L,(src->size - src->startRead) / (src->samplerate / 2));
 	else if ((src->audiobuf2 != NULL) && (src->mem_size == 0)) lua_pushinteger(L,((src->size*2) - src->startRead) / (src->bytepersample * src->samplerate));
 	else lua_pushinteger(L,(src->size - src->startRead) / ((src->bytepersample) * src->samplerate));
-	return 1;
-}
-
-static int lua_getTitle(lua_State *L){
-int argc = lua_gettop(L);
-    if (argc != 1) return luaL_error(L, "wrong number of arguments");
-	Music* src = (Music*)luaL_checkinteger(L, 1);
-	#ifndef SKIP_ERROR_HANDLING
-		if (src->magic != 0x4C534E44) return luaL_error(L, "attempt to access wrong memory block type");
-	#endif
-	lua_pushstring(L, src->title);
-	return 1;
-}
-
-static int lua_getAuthor(lua_State *L){
-int argc = lua_gettop(L);
-    if (argc != 1) return luaL_error(L, "wrong number of arguments");
-	Music* src = (Music*)luaL_checkinteger(L, 1);
-	#ifndef SKIP_ERROR_HANDLING
-		if (src->magic != 0x4C534E44) return luaL_error(L, "attempt to access wrong memory block type");
-	#endif
-	lua_pushstring(L, src->author);
 	return 1;
 }
 

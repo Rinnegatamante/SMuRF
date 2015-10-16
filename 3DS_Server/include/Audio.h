@@ -39,3 +39,4 @@ struct Music{
 Music* prepareSong(Socket* Client, u32 idx);
 void startMusic(Socket* sock, Music* src);
 void streamSong();
+void closeMusic(Music* src);
