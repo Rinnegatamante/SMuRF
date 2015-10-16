@@ -37,4 +37,5 @@ struct Music{
 };
 
 Music* prepareSong(Socket* Client, u32 idx);
-void startMusic(Music* src);
+void startMusic(Socket* sock, Music* src);
+void streamSong();

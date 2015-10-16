@@ -15,8 +15,30 @@ extern Songlist* getSong(u32 idx);
 volatile bool closeStream = false;
 Handle updateStream;
 Handle streamThread;
+volatile u32 songPointer = 0;
 
-int STREAM_MAX_ALLOC = 524288;
+struct cachePackage{
+	Socket* client;
+	Music* song;
+};
+
+Packet* netPack;
+u8* netBuffer;
+
+void heapRecv(Socket* my_socket, u32 size){
+
+	int count = recv(my_socket->sock, (char*)netBuffer, size, 0);
+	
+	if (count <= 0){
+		netPack->size = count;
+		return;
+	}
+	
+	netPack->message = netBuffer;
+	netPack->size = count;
+}
+
+#define STREAM_MAX_ALLOC 524288
 char pcmout[2048];
 
 /*void streamOGG(void* arg){ //TODO: Solve looping sound issues
@@ -177,7 +199,7 @@ char pcmout[2048];
 }*/
 
 void streamWAV(void* arg){
-	Music* src = (Music*)arg;
+	cachePackage* pack = (cachePackage*)arg;
 	while(1) {
 		svcWaitSynchronization(updateStream, U64_MAX);
 		svcClearEvent(updateStream);
@@ -185,85 +207,30 @@ void streamWAV(void* arg){
 		u32 control;
 			if(closeStream){
 				closeStream = false;
+				free(pack);
 				svcExitThread();
 			}
-			if (src->encoding == CSND_ENCODING_IMA_ADPCM) control = (src->samplerate / 2) * ((osGetTime() - src->tick) / 1000);
-			else control = src->samplerate * src->bytepersample * ((osGetTime() - src->tick) / 1000);
-			if (((control) >= (src->size - src->startRead)) && (src->isPlaying)){
-				if (src->streamLoop){
-					src->tick = osGetTime();
-					src->moltiplier = 1;
-				}else{
-					src->isPlaying = false;
-					src->tick = (osGetTime()-src->tick);
-					src->moltiplier = 1;
-					CSND_setchannel_playbackstate(src->ch, 0);
-					if (src->audiobuf2 != NULL) CSND_setchannel_playbackstate(src->ch2, 0);
-						CSND_sharedmemtype0_cmdupdatestate(0);
-				}
-				if (src->audiobuf2 == NULL){
-					//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead, src->audiobuf, src->mem_size);
-					u64 i = 0;
-					if (src->big_endian){
-						while (i < (src->mem_size)){
-							u8 tmp = src->audiobuf[i];
-							src->audiobuf[i] = src->audiobuf[i+1];
-							src->audiobuf[i+1] = tmp;
-							i=i+2;
-						}
-					}
-				}else{
-					//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead, tmp_buf, src->mem_size);
-					u32 size_tbp = src->mem_size;
-					u32 off=0;
-					u32 i=0;
-					u16 z;
-					if (src->big_endian){
-						while (i < size_tbp){
-							z=0;
-							while (z < (src->bytepersample/2)){
-								src->audiobuf[off+z] = tmp_buf[i+(src->bytepersample/2)-z-1];
-								src->audiobuf2[off+z] = tmp_buf[i+(src->bytepersample)-z-1];
-								z++;
-							}
-							i=i+src->bytepersample;
-							off=off+(src->bytepersample/2);
-						}
-					}else{
-						while (i < size_tbp){
-							z=0;
-							while (z < (src->bytepersample/2)){
-								src->audiobuf[off+z] = tmp_buf[i+z];
-								src->audiobuf2[off+z] = tmp_buf[i+z+(src->bytepersample/2)];
-								z++;
-							}
-							i=i+src->bytepersample;
-							off=off+(src->bytepersample/2);
-						}
-					}
-				}
+			Music* src = pack->song;
+			Socket* Client = pack->client;
+			if (src->encoding == CSND_ENCODING_IMA_ADPCM){ // TODO: ADPCM support
+			}else control = src->samplerate * src->bytepersample * ((osGetTime() - src->tick) / 1000);
+			if ((control >= src->size) && (src->isPlaying)){
+				src->isPlaying = false;
+				src->tick = (osGetTime()-src->tick);
+				src->moltiplier = 1;
+				CSND_setchannel_playbackstate(src->ch, 0);
+				if (src->audiobuf2 != NULL) CSND_setchannel_playbackstate(src->ch2, 0);
+				CSND_sharedmemtype0_cmdupdatestate(0);
 			}else if (((control) > ((src->mem_size / 2) * src->moltiplier)) && (src->isPlaying)){
-				if ((src->moltiplier % 2) == 1){
-					//Update and flush first half-buffer
+				//if ((src->moltiplier % 2) == 1){
+
 					if (src->audiobuf2 == NULL){
-						if (src->encoding == CSND_ENCODING_IMA_ADPCM){ //ADPCM Decoding TODO
-							u32 buffer_headers_num = ((src->mem_size)/2) / src->bytepersample;
-							u8* tmp_audiobuf = tmp_buf;
-							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(((src->mem_size)/2)*(src->moltiplier + 1)), tmp_audiobuf, (src->mem_size)/2);
-							int z=0,i=0;
-							while (i < (src->mem_size/2)){
-								src->audiobuf[z] = tmp_audiobuf[i];
-								z++;
-								i++;
-								if ((i % src->bytepersample) == 0) i=i+4;
-							}
+						if (src->encoding == CSND_ENCODING_IMA_ADPCM){ // TODO: ADPCM support
 						}else{ //PCM-16 Decoding
+							memcpy(&src->audiobuf[songPointer], &streamCache[songPointer], src->mem_size / 2);
 							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(((src->mem_size)/2)*(src->moltiplier + 1)), src->audiobuf, (src->mem_size)/2);
 							u64 i = 0;
-							if (bytesRead != ((src->mem_size)/2)){
-								//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead, src->audiobuf, (src->mem_size)/2);
-								src->moltiplier = src->moltiplier + 1;
-							}
+							
 							if (src->big_endian){
 								while (i < ((src->mem_size)/2)){
 									u8 tmp = src->audiobuf[i];
@@ -272,9 +239,26 @@ void streamWAV(void* arg){
 									i=i+2;
 								}
 							}
+							
+							socketSend(Client, "exec2:0000");
+							u32 processedBytes = 0;
+							heapRecv(Client, 16384);
+							while (netPack->size <= 0) heapRecv(Client, 16384);
+							Packet* pkg = netPack;
+							while (processedBytes < (src->mem_size / 2) - 10){
+								if (pkg->size == 0){
+									heapRecv(Client, 16384);
+									continue;
+								}
+								memcpy(&streamCache[songPointer + processedBytes], pkg->message, pkg->size);
+								processedBytes = processedBytes + pkg->size;
+								heapRecv(Client, 16384);
+							}
+							if (songPointer == 0) songPointer = src->mem_size / 2;
+							else songPointer = 0;
 						}
 						src->moltiplier = src->moltiplier + 1;
-					}else{
+					}else{ // TODO: Stereo support
 						//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(src->mem_size/2)*(src->moltiplier + 1), tmp_buf, (src->mem_size)/2);
 						if (bytesRead != ((src->mem_size)/2)){
 							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead, tmp_buf, (src->mem_size)/2);
@@ -309,7 +293,7 @@ void streamWAV(void* arg){
 							}
 						}
 					}
-				}else{
+				/*}else{
 					u32 bytesRead;
 					//Update and flush second half-buffer
 					if (src->audiobuf2 == NULL){
@@ -369,7 +353,7 @@ void streamWAV(void* arg){
 							}
 						}
 					}
-				}
+				}*/
 			}
 		}		
 }
@@ -644,11 +628,13 @@ Music* prepareSong(Socket* Client, u32 idx)
 		}
 		memcpy(&audiotype, &header[22], 2);
 		memcpy(&samplerate, &header[24], 4);
+		memcpy(&(songFile->bytepersample), &header[32], 2);
 		u16 raw_enc;
 		memcpy(&raw_enc, &header[20], 2);
 		if (raw_enc == 0x01) songFile->encoding = CSND_ENCODING_PCM16;
 		else if (raw_enc == 0x11) songFile->encoding = CSND_ENCODING_IMA_ADPCM;
 		songFile->mem_size = fileSize - header_size;
+		songFile->size = songFile->mem_size;
 		u32 REAL_STREAM_MAX_ALLOC;
 		if (audiotype == 1) REAL_STREAM_MAX_ALLOC = STREAM_MAX_ALLOC;
 		else REAL_STREAM_MAX_ALLOC = STREAM_MAX_ALLOC * 10;
@@ -664,28 +650,44 @@ Music* prepareSong(Socket* Client, u32 idx)
 				while (pkg == NULL) pkg = socketRecv(Client, 16384);
 				u32 processedBytes = 0;
 				songFile->audiobuf = (u8*)linearAlloc(songFile->mem_size);
+				streamCache = (u8*)linearAlloc(songFile->mem_size);
 				while (processedBytes < songFile->mem_size){
-					if (pkg == NULL) break;
+					if (pkg == NULL){
+						pkg = socketRecv(Client, 16384);
+						continue;
+					}
 					memcpy(&songFile->audiobuf[processedBytes], pkg->message, pkg->size);
 					processedBytes = processedBytes + pkg->size;
 					linearFree(pkg->message);
 					free(pkg);
-					pkg = socketRecv(Client, 16384);				
+					pkg = socketRecv(Client, 16384);
 				}
+				processedBytes = 0;
 				socketSend(Client, "exec2:0000");
-				while (pkg == NULL) pkg = socketRecv(Client, songFile->mem_size);
-				streamCache = pkg->message;
-				free(pkg);
+				bool secondBlock = false;
+				while (pkg == NULL) pkg = socketRecv(Client, 16384);
+				while (processedBytes < (songFile->mem_size - 10)){
+					if (pkg == NULL){
+						pkg = socketRecv(Client, 16384);
+						continue;
+					}
+					memcpy(&streamCache[processedBytes], pkg->message, pkg->size);
+					processedBytes = processedBytes + pkg->size;
+					if ((!secondBlock) && (processedBytes >= (songFile->mem_size / 2))){
+						socketSend(Client, "exec2:0000");
+						secondBlock = true;
+					}
+					linearFree(pkg->message);
+					free(pkg);
+					pkg = socketRecv(Client, 16384);
+				}
 				songFile->audiobuf2 = NULL;
-				songFile->size = fileSize;
-				socketSend(Client, "OK");
 			}
 		}
 		songFile->samplerate = samplerate;
 		songFile->moltiplier = 1;
 		songFile->isPlaying = false;
 		songFile->encoding = CSND_ENCODING_PCM16;
-		memcpy(&(songFile->bytepersample), &header[32], 2);
 		linearFree(header);
 		
 	}
@@ -909,10 +911,11 @@ static int lua_openaiff(lua_State *L)
 	return 1;
 }*/
 
-void startMusic(Music* src)
+void startMusic(Socket* sock, Music* src)
 {
 	closeStream = false;
-	int loop = 1;
+	src->streamLoop = false; // TODO: Add looping feature
+	songPointer = 0;
 	u32 ch = 0x08;
 	u32 ch2 = 0x09;
 	bool non_native_encode = false;
@@ -925,26 +928,22 @@ void startMusic(Music* src)
 		non_native_encode = true;
 	}*/
 	if (src->audiobuf2 == NULL){
-		/*if (src->mem_size > 0){
-		if (loop == 0) src->streamLoop = false;
-		else src->streamLoop = true;
 		svcCreateEvent(&updateStream,0);
 		u32 *threadStack = (u32*)memalign(32, 8192);
 		src->thread = threadStack;
+		cachePackage* pkg = (cachePackage*)malloc(sizeof(cachePackage));
+		pkg->client = sock;
+		pkg->song = src;
+		netPack = (Packet*)malloc(sizeof(Packet));
+		netBuffer = (u8*)linearAlloc(16384);
 		svcSignalEvent(updateStream);
-		Result ret = svcCreateThread(&streamThread, streamFunction, (u32)src, &threadStack[2048], 0x18, 1);
+		svcCreateThread(&streamThread, streamFunction, (u32)pkg, &threadStack[2048], 0x18, 1);
 		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), src->mem_size, 0xFFFF, 0xFFFF);
-		}else{*/
-		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), src->mem_size, 0xFFFF, 0xFFFF);
-		//}
 		src->ch = ch;
 		src->tick = osGetTime();
 		CSND_setchannel_playbackstate(ch, 1);
 		CSND_sharedmemtype0_cmdupdatestate(0);
-	}else{
-		if (src->mem_size > 0){
-		if (loop == 0) src->streamLoop = false;
-		else src->streamLoop = true;
+	}else{ // TODO: Stereo support
 		svcCreateEvent(&updateStream,0);
 		u32 *threadStack = (u32*)memalign(32, 8192);
 		src->thread = threadStack;
@@ -952,10 +951,6 @@ void startMusic(Music* src)
 		Result ret = svcCreateThread(&streamThread, streamFunction, (u32)src, &threadStack[2048], 0x18, 1);
 		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), (src->mem_size)/2, 0xFFFF, 0);
 		My_CSND_playsound(ch2, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf2, (u32*)(src->audiobuf2), (src->mem_size)/2, 0, 0xFFFF);
-		}else{
-		My_CSND_playsound(ch, loop, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), src->size, 0xFFFF, 0);
-		My_CSND_playsound(ch2, loop, src->encoding, src->samplerate, (u32*)src->audiobuf2, (u32*)(src->audiobuf2), src->size, 0, 0xFFFF);
-		}
 		src->ch = ch;
 		src->ch2 = ch2;
 		src->tick = osGetTime();
@@ -1115,6 +1110,6 @@ int argc = lua_gettop(L);
 	return 1;
 }*/
 
-void checkForCacheUpdate(){
+void streamSong(){
 	svcSignalEvent(updateStream);
 }
