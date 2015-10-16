@@ -142,7 +142,7 @@ int main(){
 	aptCloseSession();
 	isNinjhax2 = false;
 	if (!hbInit()){
-		khaxInit;
+		khaxInit();
 		hbExit();
 	}else isNinjhax2 = true;
 	CSND_initialize(NULL);
@@ -169,6 +169,7 @@ int main(){
 		RefreshScreen();
 		drawBottomUI();
 		drawTopUI();
+		if (openedSong != NULL) streamSong();
 		if (isWifiOn()){		
 			if (socketingStatus){
 				if (Server == NULL) Server = createServerSocket(5000);
@@ -201,7 +202,7 @@ int main(){
 						if (idx < 1) idx = 1;
 					}else if ((pad & KEY_A) == KEY_A){
 						if (openedSong == NULL) openedSong = prepareSong(Client, idx);
-						startMusic(openedSong);
+						startMusic(Client, openedSong);
 					}
 				}
 			}else{
