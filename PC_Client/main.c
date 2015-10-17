@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #define u32 uint32_t
+#define bool int
 
 // Command sample: exec1:200
 
@@ -32,10 +33,8 @@ typedef struct{
 	void* next;
 } songlist;
 
-// Constants and "pseudo"-constants definition
+// Constants definition
 #define MAX_BUFFER_SIZE 524288
-#define bool int
-u32 BUFFER_SIZE;
 
 // Commands list
 enum{ 
@@ -236,7 +235,7 @@ int main(int argc,char** argv){
 							char* filename = song->name;
 							char file[512];
 							sprintf(file,"./songs/%s",filename);
-							currentSong = fopen(file, "r");
+							currentSong = fopen(file, "rb");
 							int header_size = 0;
 							if (currentSong < 0) print("\nERROR: File not found.");
 							else{
@@ -246,22 +245,24 @@ int main(int argc,char** argv){
 								if (song->format == WAV_PCM16){
 									fseek(currentSong, 0x10, SEEK_SET);
 									u32 jmp;
-									fread(&jmp, 4, 1, currentSong);
+									fread(&jmp, 1, 4, currentSong);
 									fseek(currentSong, jmp, SEEK_CUR);
 									char chunk_name[5];
 									memset(&chunk_name, 0, 5);
-									fread(&chunk_name, 4, 1, currentSong);
+									fread(&chunk_name, 1, 4, currentSong);
 									while (strcmp(chunk_name, "data") != 0){
 										fread(&jmp, 4, 1, currentSong);
 										fseek(currentSong, jmp, SEEK_CUR);
-										fread(&chunk_name, 4, 1, currentSong);
+										fread(&chunk_name, 1, 4, currentSong);
 									}
 									header_size = ftell(currentSong) + 4;
 								}
 								STREAM_SIZE = size - header_size;
 								while (STREAM_SIZE > MAX_BUFFER_SIZE){
+									if ((STREAM_SIZE % 2) == 1) STREAM_SIZE++;
 									STREAM_SIZE = STREAM_SIZE / 2;
 								}
+								if ((STREAM_SIZE % 2) == 1) STREAM_SIZE++;
 								print("\nGET_SONG: Sending song info...");
 								char info[64];
 								memset(&info, 0, 64);
@@ -271,7 +272,7 @@ int main(int argc,char** argv){
 								print(" Done!");
 								fseek(currentSong, 0, SEEK_SET);
 								char* header = malloc(header_size);
-								fread(header, header_size, 1, currentSong);
+								fread(header, 1, header_size, currentSong);
 								print("\nGET_SONG: Sending file header ( ");
 								char header_size_str[8];
 								sprintf(header_size_str, "%i", header_size);
@@ -282,11 +283,10 @@ int main(int argc,char** argv){
 								print(" Done!");
 								free(header);
 								char* buffer = malloc(STREAM_SIZE);
-								fread(buffer, STREAM_SIZE, 1, currentSong);
+								fread(buffer, 1, STREAM_SIZE, currentSong);
 								print("\nGET_SONG: Sending first blocks...");
 								write(my_socket->sock, buffer, STREAM_SIZE);
 								print(" Done!");
-								BUFFER_SIZE = STREAM_SIZE;
 								free(buffer);
 							}
 						}
@@ -295,12 +295,17 @@ int main(int argc,char** argv){
 					}else if (cmd_type == SMURF_UPDATE_CACHE){
 						if (currentSong == NULL) print("\nERROR: No opened song!");
 						else{
-							char* buffer = malloc(BUFFER_SIZE / 2);
-							fread(buffer, BUFFER_SIZE / 2, 1, currentSong);
-							print("\nUPDATE_CACHE: Sending next block...");
-							write(my_socket->sock, buffer, BUFFER_SIZE / 2);
-							print(" Done!");
-							free(buffer);
+							if feof(currentSong){
+								print("\nUPDATE_CACHE: End of file reached...");
+								write(my_socket->sock, "EOF", 3);
+							}else{
+								char* cache = malloc(STREAM_SIZE / 2);
+								fread(cache, 1, STREAM_SIZE / 2, currentSong);
+								print("\nUPDATE_CACHE: Sending next block...");
+								write(my_socket->sock, cache, STREAM_SIZE / 2);
+								print(" Done!");
+								free(cache);
+							}
 						}
 						
 					// Close SMuRF
