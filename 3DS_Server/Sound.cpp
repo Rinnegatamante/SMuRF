@@ -23,7 +23,7 @@ struct cachePackage{
 };
 
 int netSize;
-u8 netBuffer[16384];
+u8 netBuffer[2048];
 
 void heapRecv(Socket* my_socket, u32 size){
 
@@ -222,7 +222,6 @@ void streamWAV(void* arg){
 						if (src->encoding == CSND_ENCODING_IMA_ADPCM){ // TODO: ADPCM support
 						}else{ //PCM-16 Decoding
 							memcpy(&src->audiobuf[songPointer], &streamCache[songPointer], src->mem_size / 2);
-							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(((src->mem_size)/2)*(src->moltiplier + 1)), src->audiobuf, (src->mem_size)/2);
 							u64 i = 0;
 							
 							if (src->big_endian){
@@ -236,17 +235,18 @@ void streamWAV(void* arg){
 							
 							socketSend(Client, "exec2:0000");
 							u32 processedBytes = 0;
-							/*heapRecv(Client, 16384);
-							while (netSize <= 0) heapRecv(Client, 16384);
-							while (processedBytes < (src->mem_size / 2) - 10){
-								if (netSize == 0){
-									heapRecv(Client, 16384);
+							netSize = 0;
+							while (netSize <= 0) heapRecv(Client, 2048);
+							while (processedBytes < (src->mem_size / 2)){
+								if (netSize <= 0){
+									heapRecv(Client, 2048);
 									continue;
 								}
+								if (strncmp((char*)netBuffer, "EOF", 3) == 0) break;
 								memcpy(&streamCache[songPointer + processedBytes], netBuffer, netSize);
 								processedBytes = processedBytes + netSize;
-								heapRecv(Client, 16384);
-							}*/
+								heapRecv(Client, 2048);
+							}
 							if (songPointer == 0) songPointer = src->mem_size / 2;
 							else songPointer = 0;
 						}
@@ -632,8 +632,10 @@ Music* prepareSong(Socket* Client, u32 idx)
 		if (audiotype == 1) REAL_STREAM_MAX_ALLOC = STREAM_MAX_ALLOC;
 		else REAL_STREAM_MAX_ALLOC = STREAM_MAX_ALLOC * 10;
 		while (songFile->mem_size > REAL_STREAM_MAX_ALLOC){
+			if ((songFile->mem_size % 2) == 1) songFile->mem_size++;
 			songFile->mem_size = songFile->mem_size / 2;
 		}
+		if ((songFile->mem_size % 2) == 1) songFile->mem_size++;
 		linearFree(pkg->message);
 		free(pkg);
 		pkg = NULL;
@@ -643,7 +645,6 @@ Music* prepareSong(Socket* Client, u32 idx)
 				while (pkg == NULL) pkg = socketRecv(Client, 16384);
 				u32 processedBytes = 0;
 				songFile->audiobuf = (u8*)linearAlloc(songFile->mem_size);
-				streamCache = (u8*)linearAlloc(songFile->mem_size);
 				while (processedBytes < songFile->mem_size){
 					if (pkg == NULL){
 						pkg = socketRecv(Client, 16384);
@@ -658,8 +659,10 @@ Music* prepareSong(Socket* Client, u32 idx)
 				processedBytes = 0;
 				socketSend(Client, "exec2:0000");
 				bool secondBlock = false;
+				pkg = NULL;
 				while (pkg == NULL) pkg = socketRecv(Client, 16384);
-				while (processedBytes < (songFile->mem_size - 10)){
+				streamCache = (u8*)linearAlloc(songFile->mem_size);
+				while (processedBytes < songFile->mem_size){
 					if (pkg == NULL){
 						pkg = socketRecv(Client, 16384);
 						continue;
@@ -682,7 +685,6 @@ Music* prepareSong(Socket* Client, u32 idx)
 		songFile->isPlaying = false;
 		songFile->encoding = CSND_ENCODING_PCM16;
 		linearFree(header);
-		
 	}
 	
 	return songFile;
@@ -931,7 +933,7 @@ void startMusic(Socket* sock, Music* src)
 		pkg->song = src;
 		svcSignalEvent(updateStream);
 		svcCreateThread(&streamThread, streamFunction, (u32)pkg, &threadStack[2048], 0x18, 1);
-		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)streamCache, (u32*)streamCache, src->mem_size, 0xFFFF, 0xFFFF);
+		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)src->audiobuf, src->mem_size, 0xFFFF, 0xFFFF);
 		src->ch = ch;
 		src->tick = osGetTime();
 		CSND_setchannel_playbackstate(ch, 1);
@@ -968,13 +970,18 @@ void closeMusic(Music* src){
 			ov_clear((OggVorbis_File*)src->sourceFile);
 			sdmcExit();
 		}*/
+	CSND_setchannel_playbackstate(src->ch, 0);
 	linearFree(src->audiobuf);
-	if (src->audiobuf2 != NULL) linearFree(src->audiobuf2);
+	if (src->audiobuf2 != NULL){
+		CSND_setchannel_playbackstate(src->ch, 0);
+		linearFree(src->audiobuf2);
+	}
+	CSND_sharedmemtype0_cmdupdatestate(0);
 	//if (tmp_buf != NULL) linearFree(tmp_buf);
 	linearFree(streamCache);
 	free(src);
 }
-
+/*
 static int lua_pause(lua_State *L)
 {
     int argc = lua_gettop(L);
