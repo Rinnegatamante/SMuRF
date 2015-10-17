@@ -156,6 +156,8 @@ int main(){
 	char alert[64];
 	char title[128];
 	char author[128];
+	char audiotype[64];
+	char time_song[64];
 	bool welcomeSent = false;
 	
 	// Initializing resources
@@ -187,8 +189,10 @@ int main(){
 					F.drawString(280, 17, alert, Color((white >> 16) & 0xFF, (white >> 8) & 0xFF, (white) & 0xFF), TOP_SCREEN, true);
 					F.drawString(12, 12, "Press A to open selected song.", Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), BOTTOM_SCREEN, true);
 					if (openedSong != NULL){
-						F.drawString(12, 85, title, Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), TOP_SCREEN, true);
-						F.drawString(12, 100, author, Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), TOP_SCREEN, true);
+						F.drawString(12, 140, title, Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), TOP_SCREEN, true);
+						F.drawString(12, 155, author, Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), TOP_SCREEN, true);
+						//F.drawString(12, 170, time_song, Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), TOP_SCREEN, true);
+						F.drawString(12, 185, audiotype, Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), TOP_SCREEN, true);
 						F.drawString(12, 27, "Press B to pause/resume current song.", Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), BOTTOM_SCREEN, true);
 						F.drawString(12, 42,"Press Y to close current song.", Color((black >> 16) & 0xFF, (black >> 8) & 0xFF, (black) & 0xFF), BOTTOM_SCREEN, true);
 					}
@@ -207,7 +211,9 @@ int main(){
 					}else if ((pad & KEY_A) == KEY_A){
 						if (openedSong == NULL) openedSong = prepareSong(Client, idx);
 						sprintf(author, "Author: %s", openedSong->author);
-						sprintf(title, "Title: %s", openedSong->author);
+						sprintf(title, "Title: %s", openedSong->title);
+						if (openedSong->audiobuf2 == NULL) sprintf(audiotype, "Audiotype: Mono (%i Hz)", openedSong->samplerate);
+						else sprintf(audiotype, "Audiotype: Stereo (%i Hz)", openedSong->samplerate);
 						startMusic(Client, openedSong);
 					}
 				}
