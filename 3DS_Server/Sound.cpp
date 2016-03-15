@@ -193,162 +193,99 @@ char pcmout[2048];
 }*/
 
 void streamWAV(void* arg){
+
+	// Fetching cachePackage struct from main thread
 	cachePackage* pack = (cachePackage*)arg;
 	while(1) {
+	
+		// Waiting for updateStream event
 		svcWaitSynchronization(updateStream, U64_MAX);
 		svcClearEvent(updateStream);
-		u32 bytesRead;
-		u32 control;
-			if(closeStream){
-				closeStream = false;
-				free(pack);
-				svcExitThread();
-			}
-			Music* src = pack->song;
-			Socket* Client = pack->client;
-			if (src->encoding == CSND_ENCODING_IMA_ADPCM){ // TODO: ADPCM support
-			}else control = src->samplerate * src->bytepersample * ((osGetTime() - src->tick) / 1000);
-			if ((control >= src->size) && (src->isPlaying)){
-				src->isPlaying = false;
-				src->tick = (osGetTime()-src->tick);
-				src->moltiplier = 1;
-				CSND_setchannel_playbackstate(src->ch, 0);
-				if (src->audiobuf2 != NULL) CSND_setchannel_playbackstate(src->ch2, 0);
-				CSND_sharedmemtype0_cmdupdatestate(0);
-			}else if ((control > ((src->mem_size / 2) * src->moltiplier)) && (src->isPlaying)){
-				//if ((src->moltiplier % 2) == 1){
-
-					if (src->audiobuf2 == NULL){
-						if (src->encoding == CSND_ENCODING_IMA_ADPCM){ // TODO: ADPCM support
-						}else{ //PCM-16 Decoding
-							memcpy(&src->audiobuf[songPointer], &streamCache[songPointer], src->mem_size / 2);
-							u64 i = 0;
-							
-							if (src->big_endian){
-								while (i < ((src->mem_size)/2)){
-									u8 tmp = src->audiobuf[i];
-									src->audiobuf[i] = src->audiobuf[i+1];
-									src->audiobuf[i+1] = tmp;
-									i=i+2;
-								}
-							}
-							
-							socketSend(Client, "exec2:0000");
-							u32 processedBytes = 0;
-							netSize = 0;
-							while (netSize <= 0) heapRecv(Client, 2048);
-							while (processedBytes < (src->mem_size / 2)){
-								if (netSize <= 0){
-									heapRecv(Client, 2048);
-									continue;
-								}
-								if (strncmp((char*)netBuffer, "EOF", 3) == 0) break;
-								memcpy(&streamCache[songPointer + processedBytes], netBuffer, netSize);
-								processedBytes = processedBytes + netSize;
-								heapRecv(Client, 2048);
-							}
-							if (songPointer == 0) songPointer = src->mem_size / 2;
-							else songPointer = 0;
-						}
-						src->moltiplier = src->moltiplier + 1;
-					}else{ // TODO: Stereo support
-						//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(src->mem_size/2)*(src->moltiplier + 1), tmp_buf, (src->mem_size)/2);
-						if (bytesRead != ((src->mem_size)/2)){
-							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead, tmp_buf, (src->mem_size)/2);
-							src->moltiplier = src->moltiplier + 1;
-						}
-						src->moltiplier = src->moltiplier + 1;
-						u32 size_tbp = (src->mem_size)/2;
-						u32 off=0;
-						u32 i=0;
-						u16 z;
-						if (src->big_endian){
-							while (i < size_tbp){
-								z=0;
-								while (z < (src->bytepersample/2)){
-									src->audiobuf[off+z] = tmp_buf[i+(src->bytepersample/2)-z-1];
-									src->audiobuf2[off+z] = tmp_buf[i+(src->bytepersample)-z-1];
-									z++;
-								}
-								i=i+src->bytepersample;
-								off=off+(src->bytepersample/2);
-							}
-						}else{
-							while (i < size_tbp){
-								z=0;
-								while (z < (src->bytepersample/2)){
-									src->audiobuf[off+z] = tmp_buf[i+z];
-									src->audiobuf2[off+z] = tmp_buf[i+z+(src->bytepersample/2)];
-									z++;
-								}
-								i=i+src->bytepersample;
-								off=off+(src->bytepersample/2);
-							}
-						}
+		
+		// Close the thread if closeStream event received
+		if(closeStream){
+			closeStream = false;
+			svcExitThread();
+		}
+		
+		// Check if the current stream is paused or not
+		Music* src = pack->song;
+		Socket* Client = pack->client;
+		if (src->isPlaying){
+		
+			// Check if a free buffer is available
+			if (src->wavebuf2 == NULL){
+			
+				// Check if file reached EOF
+				if (src->audio_pointer >= src->size){
+				
+					// Check if playback ended
+					if (!ndspChnIsPlaying(src->ch)){
+						src->isPlaying = false;
+						src->tick = (osGetTime()-src->tick);
 					}
-				/*}else{
-					u32 bytesRead;
-					//Update and flush second half-buffer
-					if (src->audiobuf2 == NULL){
-						if (src->encoding == CSND_ENCODING_IMA_ADPCM){ // ADPCM Decoding TODO
-							u32 buffer_headers_num = ((src->mem_size)/2) / src->bytepersample;
-							u8* tmp_audiobuf = tmp_buf;
-							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(((src->mem_size)/2)*(src->moltiplier + 1)), tmp_audiobuf, (src->mem_size)/2);
-							int z=0,i=0;
-							while (i < (src->mem_size/2)){
-								src->audiobuf[z+(src->mem_size/2)] = tmp_audiobuf[i];
-								z++;
-								i++;
-								if ((i % src->bytepersample) == 0) i=i+4;
-							}
-						}else{ // PCM-16 Decoding
-							//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(((src->mem_size)/2)*(src->moltiplier + 1)), src->audiobuf+((src->mem_size)/2), (src->mem_size)/2);
-							if (src->big_endian){
-								u64 i = 0;
-								while (i < ((src->mem_size)/2)){
-									u8 tmp = src->audiobuf[i+((src->mem_size)/2)];
-									src->audiobuf[i+((src->mem_size)/2)] = src->audiobuf[i+((src->mem_size)/2)+1];
-									src->audiobuf[i+((src->mem_size)/2)+1] = tmp;
-									i=i+2;
-								}
-							}
-						}
-						src->moltiplier = src->moltiplier + 1;
-					}else{
-						//FSFILE_Read(src->sourceFile, &bytesRead, src->startRead+(src->mem_size/2)*(src->moltiplier + 1), tmp_buf, (src->mem_size)/2);
-						src->moltiplier = src->moltiplier + 1;
-						u32 size_tbp = (src->mem_size)/2;
-						u32 off=0;
-						u32 i=0;
-						u16 z;
-						if (src->big_endian){
-							while (i < size_tbp){
-								z=0;
-								while (z < (src->bytepersample/2)){
-									src->audiobuf[(src->mem_size)/4+off+z] = tmp_buf[i+(src->bytepersample/2)-z-1];
-									src->audiobuf2[(src->mem_size)/4+off+z] = tmp_buf[i+(src->bytepersample)-z-1];
-									z++;
-								}
-								z=0;
-								i=i+src->bytepersample;
-								off=off+(src->bytepersample/2);
-							}
-						}else{
-							while (i < size_tbp){
-								z=0;
-								while (z < (src->bytepersample/2)){
-									src->audiobuf[(src->mem_size)/4+off+z] = tmp_buf[i+z];
-									src->audiobuf2[(src->mem_size)/4+off+z] = tmp_buf[i+z+(src->bytepersample/2)];
-									z++;
-								}
-								i=i+src->bytepersample;
-								off=off+(src->bytepersample/2);
-							}
-						}
+					
+					continue;
+				}
+				
+				// Swap audiobuffers
+				u8* tmp = src->audiobuf;
+				src->audiobuf = src->audiobuf2;
+				src->audiobuf2 = tmp;
+				
+				// Create a new block for DSP service
+				u32 bytesRead;
+				src->wavebuf2 = (ndspWaveBuf*)calloc(1,sizeof(ndspWaveBuf));
+				createDspBlock(src->wavebuf2, src->bytepersample, src->mem_size, 0, (u32*)src->audiobuf);
+				populatePurgeTable(src, src->wavebuf2);
+				ndspChnWaveBufAdd(src->ch, src->wavebuf2);
+				socketSend(Client, "exec2:0000");
+				u32 processedBytes = 0;
+				netSize = 0;
+				while (netSize <= 0) heapRecv(Client, 2048);
+				while (processedBytes < (src->mem_size / 2)){
+					if (netSize <= 0){
+							heapRecv(Client, 2048);
+							continue;
 					}
-				}*/
+					if (strncmp((char*)netBuffer, "EOF", 3) == 0) break;
+					memcpy(&streamCache[songPointer + processedBytes], netBuffer, netSize);
+					processedBytes = processedBytes + netSize;
+					heapRecv(Client, 2048);
+				}
+				memcpy(src->audiobuf, &streamCache[songPointer], src->mem_size);
+				if (songPointer == 0) songPointer = src->mem_size / 2;
+				else songPointer = 0;
+				src->audio_pointer = src->audio_pointer + src->mem_size;
+				
+				// Changing endianess if Big Endian
+				if (src->big_endian){
+					u64 i = 0;
+					while (i < src->mem_size){
+						u8 tmp = src->audiobuf[i];
+						src->audiobuf[i] = src->audiobuf[i+1];
+						src->audiobuf[i+1] = tmp;
+						i=i+2;	
+					}
+				}
+			
 			}
-		}		
+			
+			// Check if a block playback is finished
+			u32 curSample = ndspChnGetSamplePos(src->ch);
+			if (src->lastCheck > curSample){
+			
+				// Prepare next block
+				src->wavebuf = src->wavebuf2;
+				src->wavebuf2 = NULL;
+			
+			}
+			
+			// Update sample position tick
+			src->lastCheck = curSample;
+		
+		}
+	}		
 }
 
 /*static int lua_openogg(lua_State *L) 
@@ -624,8 +561,10 @@ Music* prepareSong(Socket* Client, u32 idx)
 		memcpy(&(songFile->bytepersample), &header[32], 2);
 		u16 raw_enc;
 		memcpy(&raw_enc, &header[20], 2);
+		songFile->wavebuf = NULL;
+		songFile->wavebuf2 = NULL;
 		if (raw_enc == 0x01) songFile->encoding = CSND_ENCODING_PCM16;
-		else if (raw_enc == 0x11) songFile->encoding = CSND_ENCODING_IMA_ADPCM;
+		else if (raw_enc == 0x11) songFile->encoding = CSND_ENCODING_ADPCM;
 		songFile->mem_size = fileSize - header_size;
 		songFile->size = songFile->mem_size;
 		u32 REAL_STREAM_MAX_ALLOC;
@@ -642,29 +581,30 @@ Music* prepareSong(Socket* Client, u32 idx)
 		if (raw_enc == 0x11){ // TODO: ADPCM support
 		}else if (raw_enc == 0x01){
 			if (audiotype == 1){
-				while (pkg == NULL) pkg = socketRecv(Client, 16384);
+				while (pkg == NULL) pkg = socketRecv(Client, 32768);
 				u32 processedBytes = 0;
 				songFile->audiobuf = (u8*)linearAlloc(songFile->mem_size);
-				while (processedBytes < songFile->mem_size){
+				while (processedBytes < songFile->mem_size  - 52000){
 					if (pkg == NULL){
-						pkg = socketRecv(Client, 16384);
+						pkg = socketRecv(Client, 32768);
 						continue;
 					}
 					memcpy(&songFile->audiobuf[processedBytes], pkg->message, pkg->size);
 					processedBytes = processedBytes + pkg->size;
 					linearFree(pkg->message);
 					free(pkg);
-					pkg = socketRecv(Client, 16384);
+					pkg = socketRecv(Client, 32768);
 				}
+				//svcSleepThread(1000000000);
 				processedBytes = 0;
 				socketSend(Client, "exec2:0000");
 				bool secondBlock = false;
 				pkg = NULL;
-				while (pkg == NULL) pkg = socketRecv(Client, 16384);
+				while (pkg == NULL) pkg = socketRecv(Client, 32768);
 				streamCache = (u8*)linearAlloc(songFile->mem_size);
 				while (processedBytes < songFile->mem_size){
 					if (pkg == NULL){
-						pkg = socketRecv(Client, 16384);
+						pkg = socketRecv(Client, 32768);
 						continue;
 					}
 					memcpy(&streamCache[processedBytes], pkg->message, pkg->size);
@@ -675,13 +615,12 @@ Music* prepareSong(Socket* Client, u32 idx)
 					}
 					linearFree(pkg->message);
 					free(pkg);
-					pkg = socketRecv(Client, 16384);
+					pkg = socketRecv(Client, 32768);
 				}
 				songFile->audiobuf2 = NULL;
 			}
 		}
 		songFile->samplerate = samplerate;
-		songFile->moltiplier = 1;
 		songFile->isPlaying = false;
 		songFile->encoding = CSND_ENCODING_PCM16;
 		linearFree(header);
@@ -924,38 +863,31 @@ void startMusic(Socket* sock, Music* src)
 		src->encoding = CSND_ENCODING_PCM16;
 		non_native_encode = true;
 	}*/
-	if (src->audiobuf2 == NULL){
-		svcCreateEvent(&updateStream,0);
-		u32 *threadStack = (u32*)memalign(32, 8192);
-		src->thread = threadStack;
-		cachePackage* pkg = (cachePackage*)malloc(sizeof(cachePackage));
-		pkg->client = sock;
-		pkg->song = src;
-		svcSignalEvent(updateStream);
-		svcCreateThread(&streamThread, streamFunction, (u32)pkg, &threadStack[2048], 0x18, 1);
-		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)src->audiobuf, src->mem_size, 0xFFFF, 0xFFFF);
-		src->ch = ch;
-		src->tick = osGetTime();
-		CSND_setchannel_playbackstate(ch, 1);
-		CSND_sharedmemtype0_cmdupdatestate(0);
-	}else{ // TODO: Stereo support
-		svcCreateEvent(&updateStream,0);
-		u32 *threadStack = (u32*)memalign(32, 8192);
-		src->thread = threadStack;
-		svcSignalEvent(updateStream);
-		Result ret = svcCreateThread(&streamThread, streamFunction, (u32)src, &threadStack[2048], 0x18, 1);
-		My_CSND_playsound(ch, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf, (u32*)(src->audiobuf), (src->mem_size)/2, 0xFFFF, 0);
-		My_CSND_playsound(ch2, CSND_LOOP_ENABLE, src->encoding, src->samplerate, (u32*)src->audiobuf2, (u32*)(src->audiobuf2), (src->mem_size)/2, 0, 0xFFFF);
-		src->ch = ch;
-		src->ch2 = ch2;
-		src->tick = osGetTime();
-		CSND_setchannel_playbackstate(ch, 1);
-		CSND_setchannel_playbackstate(ch2, 1);
-		CSND_sharedmemtype0_cmdupdatestate(0);
-	}
-	if (non_native_encode){
-		src->encoding = tmp_encode;
-	}
+	int raw_format;
+	if (src->audiotype == 1) raw_format = NDSP_FORMAT_MONO_PCM16;
+	else raw_format = NDSP_FORMAT_STEREO_PCM16;
+	ndspChnReset(ch);
+	ndspChnWaveBufClear(ch);
+	ndspChnSetInterp(ch, NDSP_INTERP_LINEAR);
+	ndspChnSetRate(ch, float(src->samplerate));
+	ndspChnSetFormat(ch, raw_format);
+	ndspWaveBuf* waveBuf = (ndspWaveBuf*)calloc(1, sizeof(ndspWaveBuf));
+	createDspBlock(waveBuf, src->bytepersample, src->mem_size, 0, (u32*)src->audiobuf);
+	src->blocks = NULL;
+	populatePurgeTable(src, waveBuf);
+	ndspChnWaveBufAdd(ch, waveBuf);
+	src->tick = osGetTime();
+	src->wavebuf = waveBuf;
+	src->ch = ch;
+	src->isPlaying = true;
+	src->lastCheck = ndspChnGetSamplePos(ch);
+	src->streamLoop = false;
+	svcCreateEvent(&updateStream,0);
+	cachePackage* pkg = (cachePackage*)malloc(sizeof(cachePackage));
+	pkg->client = sock;
+	pkg->song = src;
+	svcSignalEvent(updateStream);
+	threadCreate(streamFunction, pkg, 8192, 0x18, 0, true);
 	src->isPlaying = true;
 }
 
@@ -964,21 +896,13 @@ void closeMusic(Music* src){
 	svcSignalEvent(updateStream);
 	while (closeStream){} // Wait for thread exiting...
 	svcCloseHandle(updateStream);
-	svcCloseHandle(streamThread);
-	free(src->thread);
-		/*if (src->encoding == CSND_ENCODING_VORBIS){
-			ov_clear((OggVorbis_File*)src->sourceFile);
-			sdmcExit();
-		}*/
-	CSND_setchannel_playbackstate(src->ch, 0);
+
+	// Purging everything
+	purgeTable(src->blocks);
+	ndspChnReset(src->ch);
+	ndspChnWaveBufClear(src->ch);
 	linearFree(src->audiobuf);
-	if (src->audiobuf2 != NULL){
-		CSND_setchannel_playbackstate(src->ch, 0);
-		linearFree(src->audiobuf2);
-	}
-	CSND_sharedmemtype0_cmdupdatestate(0);
-	//if (tmp_buf != NULL) linearFree(tmp_buf);
-	linearFree(streamCache);
+	if (src->audiobuf2 != NULL) linearFree(src->audiobuf2);
 	free(src);
 }
 /*

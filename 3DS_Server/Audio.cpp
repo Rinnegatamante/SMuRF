@@ -37,48 +37,36 @@
 #include <3ds.h>
 #include "Audio.h"
 
-//ADPCM Encoding support from latest libctru revision
-void CSND_SetAdpcmState(u32 channel, int block, int sample, int index){
-	u32 cmdparams[0x18>>2];
-	memset(cmdparams, 0, 0x18);
-	cmdparams[0] = channel & 0x1f;
-	cmdparams[1] = sample & 0xFFFF;
-	cmdparams[2] = index & 0x7F;
-	CSND_writesharedmem_cmdtype0(block ? 0xC : 0xB, (u8*)&cmdparams);
-}
-void CSND_ChnSetAdpcmReload(u32 channel, bool reload){
-	u32 cmdparams[0x18>>2];
-	memset(cmdparams, 0, 0x18);
-	cmdparams[0] = channel & 0x1f;
-	cmdparams[1] = reload ? 1 : 0;
-	CSND_writesharedmem_cmdtype0(0xD, (u8*)&cmdparams);
+// createDspBlock: Create a new block for DSP service
+void createDspBlock(ndspWaveBuf* waveBuf, u16 bps, u32 size, bool loop, u32* data){
+	waveBuf->data_vaddr = (void*)data;
+	waveBuf->nsamples = size / bps;
+	waveBuf->looping = loop;
+	waveBuf->offset = 0;	
+	DSP_FlushDataCache(data, size);
 }
 
-/* Custom CSND_playsound: 
- - Prevent audio desynchronization for Video module
- - Enable stereo sounds
- - Add ADPCM codec support
-*/
-void My_CSND_playsound(u32 channel, u32 looping, u32 encoding, u32 samplerate, u32 *vaddr0, u32 *vaddr1, u32 totalbytesize, u32 l_vol, u32 r_vol){
-	u32 physaddr0 = 0;
-	u32 physaddr1 = 0;
-	physaddr0 = osConvertVirtToPhys((u32)vaddr0);
-	physaddr1 = osConvertVirtToPhys((u32)vaddr1);
-	if (vaddr0 && encoding == CSND_ENCODING_IMA_ADPCM){
-		int adpcmSample = ((s16*)vaddr0)[-2];
-		int adpcmIndex = ((u8*)vaddr0)[-2];
-		CSND_SetAdpcmState(channel, 0, adpcmSample, adpcmIndex);
-		CSND_SetAdpcmState(channel, 1, adpcmSample, adpcmIndex);
+// populatePurgeTable: Create a new block for DSP service
+void populatePurgeTable(Music* songFile, ndspWaveBuf* waveBuf){
+	PurgeTable* tmp = songFile->blocks;
+	if (tmp == NULL){
+		tmp = (PurgeTable*)(malloc(sizeof(PurgeTable)));
+		tmp->pointer = waveBuf;
+		tmp->next == NULL;
+	}else{
+		while (tmp->next != NULL) tmp = tmp->next;
+		tmp->next = (PurgeTable*)(malloc(sizeof(PurgeTable)));
+		tmp->next->pointer = waveBuf;
+		tmp->next->next == NULL;
 	}
-	CSND_sharedmemtype0_cmde(channel, looping, encoding, samplerate, 2, 0, physaddr0, physaddr1, totalbytesize);
-	CSND_sharedmemtype0_cmd8(channel, samplerate);
-	if(looping){
-		if(physaddr1>physaddr0)totalbytesize-= (u32)physaddr1 - (u32)physaddr0;
-		CSND_sharedmemtype0_cmd3(channel, physaddr1, totalbytesize);
+}
+
+// purgeTable: Free any entry in PurgeTable struct
+void purgeTable(PurgeTable* tbl){
+	while (tbl != NULL){
+		PurgeTable* tmp = tbl;
+		tbl = tbl->next;
+		free(tmp->pointer);
+		free(tmp);
 	}
-	u32 cmdparams[0x18>>2];
-	memset(cmdparams, 0, 0x18);
-	cmdparams[0] = channel & 0x1f;
-	cmdparams[1] = l_vol | (r_vol<<16);
-	CSND_writesharedmem_cmdtype0(0x9, (u8*)&cmdparams);
 }

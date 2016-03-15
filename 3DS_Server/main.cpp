@@ -136,16 +136,17 @@ int main(){
 	srvInit();	
 	aptInit();
 	gfxInitDefault();
-	hidInit(NULL);
+	hidInit();
 	aptOpenSession();
-	Result ret=APT_SetAppCpuTimeLimit(NULL, 30);
+	Result ret=APT_SetAppCpuTimeLimit(30);
 	aptCloseSession();
 	isNinjhax2 = false;
 	if (!hbInit()){
 		khaxInit();
 		hbExit();
 	}else isNinjhax2 = true;
-	CSND_initialize(NULL);
+	ndspInit();
+	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
 	initScene();
 	
 	// Variables definition
@@ -246,7 +247,7 @@ int main(){
 	// Term services
 	if (!isNinjhax2) khaxExit();
 	endScene();
-	CSND_shutdown();
+	ndspExit();
 	if (socketingStatus) termSocketing();
 	hidExit();
 	gfxExit();
