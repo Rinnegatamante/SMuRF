@@ -13,7 +13,7 @@ u32* sockmem;
 
 bool isWifiOn(){
 	u32 wifiStatus;
-	if (ACU_GetWifiStatus(NULL, &wifiStatus) ==  0xE0A09D2E) return false;
+	if (ACU_GetWifiStatus(&wifiStatus) ==  0xE0A09D2E) return false;
 	else return wifiStatus;
 	return 1;
 }
@@ -30,9 +30,9 @@ u8 getWifiLevel(){
 
 void initSocketing(){
 	sockmem = (u32*)memalign(0x1000, 0x100000);
-	Result ret = SOC_Initialize(sockmem, 0x100000);
+	Result ret = socInit(sockmem, 0x100000);
 	if(ret != 0){
-		SOC_Shutdown();
+		socExit();
 		free(sockmem);
 	}
 }
@@ -67,7 +67,7 @@ Socket* createServerSocket(int port){
 
 void termSocketing()
 {
-	SOC_Shutdown();
+	socExit();
 	free(sockmem);
 }
 
@@ -108,6 +108,8 @@ Socket* serverAccept(Socket* my_socket)
 	incomingSocket->serverSocket = 0;
 	incomingSocket->sock = sockClient;
 	incomingSocket->addrTo = addrAccept;
+	int rcvbuf = 32768;
+	setsockopt(incomingSocket->sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 	
 	return incomingSocket;
 }
