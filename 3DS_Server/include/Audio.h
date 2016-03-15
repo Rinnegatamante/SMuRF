@@ -9,34 +9,43 @@ typedef enum{
 	CSND_ENCODING_VORBIS = 4
 }CSND_EXTRA_ENCODING;
 
+// Audio structs
+struct PurgeTable{
+	ndspWaveBuf* pointer;
+	PurgeTable* next;
+};
+
 struct Music{
 	u32 magic;
 	u32 samplerate;
 	u16 bytepersample;
 	u8* audiobuf;
 	u8* audiobuf2;
+	ndspWaveBuf* wavebuf;
+	ndspWaveBuf* wavebuf2;
+	u16 lastCheck;
 	u32 size;
 	u32 mem_size;
 	Handle sourceFile;
 	u32 startRead;
 	char author[256];
 	char title[256];
-	u32 moltiplier;
+	u32 resumeSample;
 	u64 tick;
 	bool isPlaying;
 	u32 ch;
-	u32 ch2;
+	u8 audiotype;
 	bool streamLoop;
 	bool big_endian;
 	u8 encoding;
-	u32* thread;
+	PurgeTable* blocks;
 	u32 audio_pointer;
-	u32 package_size;
-	u32 total_packages_size;
-	u32 stream_packages_size;
 };
 
 Music* prepareSong(Socket* Client, u32 idx);
 void startMusic(Socket* sock, Music* src);
 void streamSong();
 void closeMusic(Music* src);
+void createDspBlock(ndspWaveBuf* waveBuf, u16 bps, u32 size, bool loop, u32* data);
+void populatePurgeTable(Music* songFile, ndspWaveBuf* waveBuf);
+void purgeTable(PurgeTable* tbl);

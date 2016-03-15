@@ -1,6 +1,6 @@
 #include "Font.hpp"
 extern "C"{
-	#include "sf2d.h"
+	#include "../sf2d.h"
 }
 
 struct ttf{
