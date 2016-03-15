@@ -47,14 +47,14 @@ CFLAGS	:=	-g -O2 -mword-relocations \
 			-fomit-frame-pointer -ffast-math \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS -DLODEPNG_NO_COMPILE_ENCODER
+CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS -DLODEPNG_NO_COMPILE_ENCODER -DLIBCTRU_NO_DEPRECATION
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lctru -lm
+LIBS	:= -lsf2d -lctru -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
