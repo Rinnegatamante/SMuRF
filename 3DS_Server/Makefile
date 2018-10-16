@@ -6,7 +6,7 @@ ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
-LPP_CTRULIB ?= $(CURDIR)/3DS_Server
+LPP_CTRULIB ?= $(CURDIR)
 
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
@@ -30,14 +30,14 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	3DS_Server
-DATA		:=	3DS_Server/data
-INCLUDES	:=	3DS_Server/include
+SOURCES		:=	.
+DATA		:=	data
+INCLUDES	:=	include
 
 APP_TITLE	:=	SMuRF
 APP_AUTHOR	:=	Rinnegatamante
 APP_DESCRIPTION	:=	Simple Music Reproducer & Fetcher
-ICON		:=	3DS_Server/icon.png
+ICON		:=	icon.png
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
