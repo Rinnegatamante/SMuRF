@@ -152,7 +152,14 @@ int main(int argc,char** argv){
 	#endif
 
 	// Getting IP
-	char* host = (char*)(argv[1]);
+	char host[32];
+	if (argc > 1){
+		char* ip = (char*)(argv[1]);
+		sprintf(host,"%s",ip);
+	}else{
+		printf("Insert Vita IP: ");
+		scanf("%s",host);
+	}
 	
 	// Writing info on the screen
 	print("+-------------------------+\n");
