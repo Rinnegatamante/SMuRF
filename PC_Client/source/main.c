@@ -1,13 +1,19 @@
-#include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
-#include <malloc.h>
 #include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <windows.h>
+#include <shellapi.h>
 #include <dirent.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
+#ifdef __WIN32__
+# include <winsock2.h>
+#else
+# include <sys/socket.h>
+# include <netinet/in.h>
+# include <netdb.h>
+# include <arpa/inet.h>
+#endif
 #include <fcntl.h>
 #define u32 uint32_t
 #define bool int
@@ -70,11 +76,11 @@ songlist* getSong(songlist* list, int idx){
 	return song;
 }
 
-bool isDir(const char* target){
+/*bool isDir(const char* target){
    struct stat statbuf;
    stat(target, &statbuf);
    return S_ISDIR(statbuf.st_mode);
-}
+}*/
 
 // populateDatabase: Full songlist with songs in a directory
 int populateDatabase(DIR* folder){
@@ -87,8 +93,8 @@ int populateDatabase(DIR* folder){
 		if (curFile) {
 			char fullName[512];
 			sprintf(fullName, "./songs/%s", curFile->d_name);
-			if (isDir(fullName)) continue;
-			else{
+			//if (isDir(fullName)) continue;
+			//else{
 				FILE* file = fopen(fullName, "r");
 				if (idx == 0){
 					songList = malloc(sizeof(songlist));
@@ -112,7 +118,7 @@ int populateDatabase(DIR* folder){
 						break;
 				}
 				strcpy(pointer->name,curFile->d_name);
-			}
+			//}
 		}else break;
 		idx++;
 	}
@@ -138,6 +144,12 @@ char* parseSongs(songlist* list, int songs){
 }
 
 int main(int argc,char** argv){
+	
+	#ifdef __WIN32__
+	WORD versionWanted = MAKEWORD(1, 1);
+	WSADATA wsaData;
+	WSAStartup(versionWanted, &wsaData);
+	#endif
 
 	// Getting IP
 	char* host = (char*)(argv[1]);
@@ -168,13 +180,14 @@ int main(int argc,char** argv){
 		return -1;
 	}else print("\nConnection estabilished, waiting for server response...");
 	
-	fcntl(my_socket->sock, F_SETFL, O_NONBLOCK);
+	u_long _true = 1;
+	ioctlsocket(my_socket->sock, FIONBIO, &_true);
 	
 	// Waiting for magic
 	char data[13];
-	int count = recv(my_socket->sock, &data, 13, 0);
+	int count = recv(my_socket->sock, data, 13, 0);
 	while (count < 0){
-		count = recv(my_socket->sock, &data, 13, 0);
+		count = recv(my_socket->sock, data, 13, 0);
 	}
 	if (strncmp(data,"WELCOME SMURF",13) == 0){
 		print("\n\n\n\n\nWelcome to SMuRF!\n\nWaiting for commands...\n\nDebug Console:\n");	
@@ -188,7 +201,7 @@ int main(int argc,char** argv){
 	char cmd[10];
 	char cmd_id[2];
 	while (1){
-		count = recv(my_socket->sock, &cmd, 10, 0);
+		count = recv(my_socket->sock, cmd, 10, 0);
 		if (count > 0){
 		
 			// Commands parser
@@ -268,7 +281,7 @@ int main(int argc,char** argv){
 								memset(&info, 0, 64);
 								sprintf(info, "%i", size);
 								write(my_socket->sock, info, 64);
-								while (recv(my_socket->sock, &data, 2, 0) < 1){}
+								while (recv(my_socket->sock, data, 2, 0) < 1){}
 								print(" Done!");
 								fseek(currentSong, 0, SEEK_SET);
 								char* header = malloc(header_size);
@@ -279,7 +292,7 @@ int main(int argc,char** argv){
 								print(header_size_str);
 								print(" bytes )...");
 								write(my_socket->sock, header, header_size);
-								while (recv(my_socket->sock, &data, 2, 0) < 1){}
+								while (recv(my_socket->sock, data, 2, 0) < 1){}
 								print(" Done!");
 								free(header);
 								char* buffer = malloc(STREAM_SIZE);
