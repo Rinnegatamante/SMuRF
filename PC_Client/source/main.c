@@ -91,6 +91,7 @@ int populateDatabase(DIR* folder){
 		
 		curFile = readdir(folder);
 		if (curFile) {
+			if ((strcmp(curFile->d_name,".") == 0) | (strcmp(curFile->d_name,"..") == 0)) continue;
 			char fullName[512];
 			sprintf(fullName, "./songs/%s", curFile->d_name);
 			//if (isDir(fullName)) continue;
@@ -157,7 +158,7 @@ int main(int argc,char** argv){
 		char* ip = (char*)(argv[1]);
 		sprintf(host,"%s",ip);
 	}else{
-		printf("Insert Vita IP: ");
+		printf("Insert server IP: ");
 		scanf("%s",host);
 	}
 	
@@ -224,7 +225,7 @@ int main(int argc,char** argv){
 						if (songsdir == NULL) print("\nERROR: Cannot find songs directory!");
 						else{
 							int totalSongs = populateDatabase(songsdir);
-							print(" Done!\n");
+							printf(" Done (%i songs detected)!\n", totalSongs);
 							int dim;
 							char* query;
 							if (totalSongs == 0){ 
@@ -237,7 +238,7 @@ int main(int argc,char** argv){
 								dim = 128*totalSongs;
 							}
 							print("GET_SONG_LIST: Sending songs list...");
-							write(my_socket->sock, query, dim);
+							send(my_socket->sock, query, dim, 0);
 							print(" Done!");
 							free(query);
 						}
@@ -287,7 +288,7 @@ int main(int argc,char** argv){
 								char info[64];
 								memset(&info, 0, 64);
 								sprintf(info, "%i", size);
-								write(my_socket->sock, info, 64);
+								send(my_socket->sock, info, 64, 0);
 								while (recv(my_socket->sock, data, 2, 0) < 1){}
 								print(" Done!");
 								fseek(currentSong, 0, SEEK_SET);
@@ -298,14 +299,14 @@ int main(int argc,char** argv){
 								sprintf(header_size_str, "%i", header_size);
 								print(header_size_str);
 								print(" bytes )...");
-								write(my_socket->sock, header, header_size);
+								send(my_socket->sock, header, header_size, 0);
 								while (recv(my_socket->sock, data, 2, 0) < 1){}
 								print(" Done!");
 								free(header);
 								char* buffer = malloc(STREAM_SIZE);
 								fread(buffer, 1, STREAM_SIZE, currentSong);
 								print("\nGET_SONG: Sending first blocks...");
-								write(my_socket->sock, buffer, STREAM_SIZE);
+								send(my_socket->sock, buffer, STREAM_SIZE, 0);
 								print(" Done!");
 								free(buffer);
 							}
@@ -317,12 +318,12 @@ int main(int argc,char** argv){
 						else{
 							if (feof(currentSong)){
 								print("\nUPDATE_CACHE: End of file reached...");
-								write(my_socket->sock, "EOF", 3);
+								send(my_socket->sock, "EOF", 3, 0);
 							}else{
 								char* cache = malloc(STREAM_SIZE / 2);
 								fread(cache, 1, STREAM_SIZE / 2, currentSong);
 								print("\nUPDATE_CACHE: Sending next block...");
-								write(my_socket->sock, cache, STREAM_SIZE / 2);
+								send(my_socket->sock, cache, STREAM_SIZE / 2, 0);
 								print(" Done!");
 								free(cache);
 							}
