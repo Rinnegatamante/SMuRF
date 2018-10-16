@@ -1,3 +1,12 @@
+*.wav
+*.d
+*.o
+*.exe
+*.3dsx
+*.elf
+*.bin
+*.smdh
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
