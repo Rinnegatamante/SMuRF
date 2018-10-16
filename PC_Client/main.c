@@ -295,7 +295,7 @@ int main(int argc,char** argv){
 					}else if (cmd_type == SMURF_UPDATE_CACHE){
 						if (currentSong == NULL) print("\nERROR: No opened song!");
 						else{
-							if feof(currentSong){
+							if (feof(currentSong)){
 								print("\nUPDATE_CACHE: End of file reached...");
 								write(my_socket->sock, "EOF", 3);
 							}else{
