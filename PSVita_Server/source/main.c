@@ -382,9 +382,9 @@ int main(){
 		vita2d_clear_screen();
 		switch (state){
 		case BOOTSCREEN:
-			vita2d_pgf_draw_textf(font, 2, 25, green, 1.0, "Welcome to Simple Music Reproducer & Fetcher (SMuRF) v.0.1", vita_ip);
-			vita2d_pgf_draw_textf(font, 2, 85, white, 1.0, "Please insert the following IP in SMuRF client:", vita_ip);
-			vita2d_pgf_draw_textf(font, 2, 105, white, 1.0, "IP: %s", vita_ip);
+			vita2d_pgf_draw_textf(font, 10, 25, green, 1.0, "Welcome to Simple Music Reproducer & Fetcher (SMuRF) v.0.1", vita_ip);
+			vita2d_pgf_draw_textf(font, 10, 85, white, 1.0, "Please insert the following IP in SMuRF client:", vita_ip);
+			vita2d_pgf_draw_textf(font, 10, 105, white, 1.0, "IP: %s", vita_ip);
 			client = sceNetAccept(server, (SceNetSockaddr*)&addrAccept, &cbAddrAccept);
 			if (client > 0){
 				socketSend(client, "WELCOME SMURF");
@@ -394,19 +394,20 @@ int main(){
 			}
 			break;
 		case SONGS_LIST:
-			vita2d_pgf_draw_text(font, 2, 25, green, 1.0, alert);
-			vita2d_pgf_draw_text(font, 2, 45, white, 1.0, "Press Cross to open selected song.");
+			vita2d_pgf_draw_text(font, 10, 25, green, 1.0, alert);
+			vita2d_pgf_draw_text(font, 10, 45, white, 1.0, "Press Cross to open selected song.");
 			vita2d_draw_line(0, 70, 960, 70, white);
 			vita2d_draw_line(0, 150, 960, 150, white);
 			drawSongList(pc_songs);
 			
 			if (cur_song != NULL){
-				vita2d_pgf_draw_text(font, 2, 65, white, 1.0, "Press Square to pause/resume song.");
-				vita2d_pgf_draw_text(font, 2, 85, green, 1.0, cur_song->title);
-				vita2d_pgf_draw_text(font, 2, 105, white, 1.0, cur_song->author);
-				vita2d_pgf_draw_textf(font, 2, 125, white, 1.0, "Samplerate: %lu Hz    Duration: %s", cur_song->samplerate, cur_song->total_time);
-				vita2d_pgf_draw_textf(font, 2, 145, white, 1.0, "Audiotype: %s", cur_song->audiotype == 1 ? "Mono" : "Stereo");
-			}else vita2d_pgf_draw_text(font, 2, 85, green, 1.0, "No song opened");
+				vita2d_pgf_draw_text(font, 10, 65, white, 1.0, "Press Square to pause/resume song.");
+				vita2d_pgf_draw_text(font, 10, 85, green, 1.0, cur_song->title);
+				vita2d_pgf_draw_text(font, 10, 105, white, 1.0, cur_song->author);
+				vita2d_pgf_draw_textf(font, 10, 125, white, 1.0, "Samplerate: %lu Hz    Duration: %s", cur_song->samplerate, cur_song->total_time);
+				vita2d_pgf_draw_textf(font, 10, 145, white, 1.0, "Audiotype: %s", cur_song->audiotype == 1 ? "Mono" : "Stereo");
+				if (!cur_song->playing) vita2d_pgf_draw_text(font, 870, 85, white, 1.0, "PAUSED");
+			}else vita2d_pgf_draw_text(font, 10, 85, green, 1.0, "No song opened");
 			
 			sceCtrlPeekBufferPositive(0, &pad, 1);
 			if checkButton(SCE_CTRL_UP){
