@@ -54,7 +54,7 @@ enum{
 FILE* currentSong = NULL;
 songlist* songList = NULL;
 uint8_t closing = 0;
-uint32_t STREAM_SIZE = 0;
+uint32_t STREAM_SIZE = 32768;
 
 // print: Print a string on stdout
 void print(char* text){
@@ -278,12 +278,12 @@ int main(int argc,char** argv){
 									}
 									header_size = ftell(currentSong) + 4;
 								}
-								STREAM_SIZE = size - header_size;
+								/*STREAM_SIZE = size - header_size;
 								while (STREAM_SIZE > MAX_BUFFER_SIZE){
 									if ((STREAM_SIZE % 2) == 1) STREAM_SIZE++;
 									STREAM_SIZE = STREAM_SIZE / 2;
 								}
-								if ((STREAM_SIZE % 2) == 1) STREAM_SIZE++;
+								if ((STREAM_SIZE % 2) == 1) STREAM_SIZE++;*/
 								print("\nGET_SONG: Sending song info...");
 								char info[64];
 								memset(&info, 0, 64);
@@ -320,10 +320,10 @@ int main(int argc,char** argv){
 								print("\nUPDATE_CACHE: End of file reached...");
 								send(my_socket->sock, "EOF", 3, 0);
 							}else{
-								char* cache = malloc(STREAM_SIZE / 2);
-								fread(cache, 1, STREAM_SIZE / 2, currentSong);
+								char* cache = malloc(STREAM_SIZE/* / 2*/);
+								fread(cache, 1, STREAM_SIZE/* / 2*/, currentSong);
 								print("\nUPDATE_CACHE: Sending next block...");
-								send(my_socket->sock, cache, STREAM_SIZE / 2, 0);
+								send(my_socket->sock, cache, STREAM_SIZE/* / 2*/, 0);
 								print(" Done!");
 								free(cache);
 							}
