@@ -193,16 +193,16 @@ void prepareSong(int client, uint32_t idx){
 	sceKernelWaitSema(mutex, 1, NULL);
 	
 	// Init resources
+	uint16_t bps;
+	uint32_t header_size;
+	packet *pkg = NULL;
+	music *ret = (music*)malloc(sizeof(music));
 	if (cur_song != NULL){
 		music *old_song = cur_song;
 		cur_song = NULL;
 		sceKernelDelayThread(10000);
 		free(old_song);
 	}
-	uint16_t bps;
-	uint32_t header_size;
-	packet *pkg = NULL;
-	music *ret = (music*)malloc(sizeof(music));
 	
 	// Sending command to client
 	sceKernelDelayThread(10000);
