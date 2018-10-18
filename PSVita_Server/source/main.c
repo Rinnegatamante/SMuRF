@@ -41,6 +41,7 @@ typedef struct{
 	uint32_t size;
 } packet;
 
+// Available screen states
 enum {
 	BOOTSCREEN,
 	SONGS_LIST
@@ -61,6 +62,7 @@ uint32_t green;
 static void *net_memory = NULL;
 #define NET_INIT_SIZE 1*1024*1024
 int client = -1;
+SceUID mutex;
 
 // Vita IP info
 static unsigned long myAddr;
@@ -187,7 +189,8 @@ songlist *getSong(uint32_t idx){
 }
 
 // prepareSong: Receive a song over network
-void prepareSong(int client, uint32_t idx){
+void prepareSong(int client, uint32_t idx){	
+	sceKernelWaitSema(mutex, 1, NULL);
 	
 	// Init resources
 	if (cur_song != NULL){
@@ -202,14 +205,16 @@ void prepareSong(int client, uint32_t idx){
 	music *ret = (music*)malloc(sizeof(music));
 	
 	// Sending command to client
+	sceKernelDelayThread(10000);
 	char cmd[10];
 	sprintf(cmd, "exec1:%lu", (idx - 1));
 	cmd[9] = 0;
 	socketSend(client, cmd);
 	
 	// Getting file info
+	sceKernelDelayThread(10000);
 	int msg_size = 0;
-	while (msg_size != 64){
+	while (msg_size > 1000 || msg_size < 4){
 		pkg = NULL;
 		while (pkg == NULL) pkg = socketRecv(client, 32768);
 		msg_size = pkg->size;
@@ -280,7 +285,7 @@ void prepareSong(int client, uint32_t idx){
 		cur_song = ret;
 
 	}
-	
+	sceKernelSignalSema(mutex, 1);
 }
 
 // Audio thread code
@@ -296,7 +301,8 @@ static int audioThread(unsigned int args, void* arg){
 	
 	for (;;){
 		if (cur_song != NULL && cur_song->playing){
-			if (cur_song != old_music) sceAudioOutSetConfig(ch, 16384 / cur_song->audiotype, cur_song->samplerate, cur_song->audiotype == 1 ? SCE_AUDIO_OUT_PARAM_FORMAT_S16_MONO : SCE_AUDIO_OUT_PARAM_FORMAT_S16_STEREO);
+			sceKernelWaitSema(mutex, 1, NULL);
+			if (cur_song != old_music) sceAudioOutSetConfig(ch, 16384 / cur_song->audiotype, cur_song->samplerate, cur_song->audiotype == 1 ? SCE_AUDIO_OUT_MODE_MONO : SCE_AUDIO_OUT_MODE_STEREO);
 			sceAudioOutOutput(ch, cur_song->audiobuf[cur_song->idx]);
 			cur_song->idx = (cur_song->idx + 1) % 2;
 			socketSend(client, "exec2:0000");
@@ -306,6 +312,7 @@ static int audioThread(unsigned int args, void* arg){
 				cur_song = NULL;
 			}
 			old_music = cur_song;
+			sceKernelSignalSema(mutex, 1);
 		}else sceKernelDelayThread(100);
 	}
 	
@@ -326,6 +333,7 @@ int main(){
 	vita2d_init();
 	vita2d_set_clear_color(RGBA8(0x00, 0x00, 0x00, 0xFF));
 	font = vita2d_load_default_pgf();
+	mutex = sceKernelCreateSema("mutex", 0, 1, 1, NULL);
 	
 	// Start SceNet & SceNetCtl
 	int ret = sceNetShowNetstat();
