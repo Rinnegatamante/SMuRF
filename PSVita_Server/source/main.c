@@ -29,7 +29,7 @@ typedef struct{
 	uint32_t samplerate;
 	uint16_t audiotype;
 	char total_time[64];
-	uint32_t start_tick;
+	uint64_t tick;
 	uint8_t audiobuf[2][32768];
 	uint8_t idx;
 	uint8_t playing;
@@ -51,7 +51,7 @@ enum {
 songlist *pc_songs = NULL;
 uint32_t total;
 int idx = 1;
-volatile music *cur_song = NULL;
+music *cur_song = NULL;
 
 // Font related stuffs
 vita2d_pgf *font = NULL;
@@ -100,6 +100,11 @@ void format_time(char *dst, uint32_t src){
 	mins = mins % 60;
 	if (hrs > 0) sprintf(dst, "%02lu:%02lu:%02lu", hrs, mins, secs);
 	else sprintf(dst, "%02lu:%02lu", mins, secs);
+}
+
+uint32_t getSongTime(){
+	if (cur_song->playing) return (sceKernelGetProcessTimeWide() - cur_song->tick) / 1000000;
+	else return cur_song->tick / 1000000;
 }
 
 // fetchSonglist: Gets songlist from a client
@@ -280,6 +285,7 @@ void prepareSong(int client, uint32_t idx){
 		format_time(ret->total_time, total_time);
 		ret->idx = 0;
 		ret->playing = 1;
+		ret->tick = sceKernelGetProcessTimeWide();
 		
 		socketRecvFast(client, ret->audiobuf[0], 32768);
 		cur_song = ret;
@@ -302,7 +308,10 @@ static int audioThread(unsigned int args, void* arg){
 	for (;;){
 		if (cur_song != NULL && cur_song->playing){
 			sceKernelWaitSema(mutex, 1, NULL);
-			if (cur_song != old_music) sceAudioOutSetConfig(ch, 16384 / cur_song->audiotype, cur_song->samplerate, cur_song->audiotype == 1 ? SCE_AUDIO_OUT_MODE_MONO : SCE_AUDIO_OUT_MODE_STEREO);
+			if (cur_song != old_music){
+				sceAudioOutSetConfig(ch, 16384 / cur_song->audiotype, cur_song->samplerate, cur_song->audiotype == 1 ? SCE_AUDIO_OUT_MODE_MONO : SCE_AUDIO_OUT_MODE_STEREO);
+				cur_song->tick = sceKernelGetProcessTimeWide();
+			}
 			sceAudioOutOutput(ch, cur_song->audiobuf[cur_song->idx]);
 			cur_song->idx = (cur_song->idx + 1) % 2;
 			socketSend(client, "exec2:0000");
@@ -411,9 +420,11 @@ int main(){
 			if (cur_song != NULL){
 				vita2d_pgf_draw_text(font, 10, 65, white, 1.0, "Press Square to pause/resume song.");
 				vita2d_pgf_draw_text(font, 10, 85, green, 1.0, cur_song->title);
-				vita2d_pgf_draw_text(font, 10, 105, white, 1.0, cur_song->author);
-				vita2d_pgf_draw_textf(font, 10, 125, white, 1.0, "Samplerate: %lu Hz    Duration: %s", cur_song->samplerate, cur_song->total_time);
-				vita2d_pgf_draw_textf(font, 10, 145, white, 1.0, "Audiotype: %s", cur_song->audiotype == 1 ? "Mono" : "Stereo");
+				vita2d_pgf_draw_textf(font, 10, 105, white, 1.0, "Author: %s", cur_song->author);
+				char cur_time[32];
+				format_time(cur_time, getSongTime());
+				vita2d_pgf_draw_textf(font, 10, 125, white, 1.0, "%s/%s", cur_time, cur_song->total_time);
+				vita2d_pgf_draw_textf(font, 10, 145, white, 1.0, "Samplerate: %lu Hz     Audiotype: %s", cur_song->samplerate, cur_song->audiotype == 1 ? "Mono" : "Stereo");
 				if (!cur_song->playing) vita2d_pgf_draw_text(font, 870, 85, white, 1.0, "PAUSED");
 			}else vita2d_pgf_draw_text(font, 10, 85, green, 1.0, "No song opened");
 			
@@ -433,7 +444,10 @@ int main(){
 			}else if checkButton(SCE_CTRL_CROSS){
 				prepareSong(client, idx);
 			}else if checkButton(SCE_CTRL_SQUARE){
-				if (cur_song != NULL) cur_song->playing = (cur_song->playing + 1) % 2;
+				if (cur_song != NULL){
+					cur_song->playing = (cur_song->playing + 1) % 2;
+					cur_song->tick = sceKernelGetProcessTimeWide() - cur_song->tick;
+				}
 			}
 			
 			break;
